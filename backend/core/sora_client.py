@@ -140,13 +140,34 @@ class SoraClient:
 
             # ③ 下载视频
             logger.info(f"Downloading video from {video_url}")
-            try:
-                async with session.get(video_url, proxy=request_proxy) as resp:
-                    resp.raise_for_status()
-                    video_bytes = await resp.read()
-            except Exception as e:
-                logger.error(f"Failed to download video: {e}")
-                raise
+            download_max_retries = 3
+            video_bytes = None
+            
+            for attempt in range(download_max_retries):
+                try:
+                    # 设置较长的超时时间，防止大文件下载中断
+                    timeout = aiohttp.ClientTimeout(total=300) # 5 minutes
+                    async with session.get(video_url, proxy=request_proxy, timeout=timeout) as resp:
+                        if resp.status != 200:
+                            logger.warning(f"Download attempt {attempt + 1} failed with status {resp.status}")
+                            resp.raise_for_status()
+                        
+                        video_bytes = await resp.read()
+                        logger.info("Video downloaded successfully")
+                        break # Download successful, exit loop
+                except Exception as e:
+                    logger.error(f"Failed to download video (Attempt {attempt + 1}/{download_max_retries}): {e}")
+                    if attempt < download_max_retries - 1:
+                        wait_time = (attempt + 1) * 5
+                        logger.info(f"Retrying download in {wait_time} seconds...")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        # 此时已达到最大重试次数，抛出异常
+                        # 注意：这里抛出异常会导致 TaskManager 认为任务失败，从而触发整个任务（包括生成）的重试
+                        # 如果是网络问题导致的下载失败，这可能是期望的行为（换个节点重试？）
+                        # 但如果是文件本身有问题，重试生成也是合理的
+                        # 为了避免无限消耗配额，建议 TaskManager 层控制最大重试次数（已有 MAX_RETRY）
+                        raise RuntimeError(f"Failed to download video after {download_max_retries} attempts: {e}")
 
             progress_cb(100)
             return video_bytes
