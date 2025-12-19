@@ -114,3 +114,39 @@ def list_tasks():
             
         tasks.append(task_dict)
     return tasks
+
+if __name__ == "__main__":
+    import uvicorn
+    import webbrowser
+    import sys
+    
+    # Windows 下 PyInstaller 多进程支持
+    # 虽然我们这里没有显式使用多进程，但为了稳健性加上
+    from multiprocessing import freeze_support
+    freeze_support()
+    
+    print("Starting Sora2 Video Platform...")
+    print("Server running at: http://localhost:8000")
+    print("Backend API Docs: http://localhost:8000/docs")
+    print("Please wait while the server starts...")
+
+    # 自动打开浏览器
+    def open_browser():
+        # 简单等待一下让服务器启动
+        import time
+        time.sleep(1.5) 
+        webbrowser.open("http://localhost:8000")
+
+    # 在新线程中打开浏览器，以免阻塞服务器启动
+    import threading
+    threading.Thread(target=open_browser, daemon=True).start()
+
+    # 启动服务器
+    # 注意：在打包环境中不要使用 reload=True
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    except KeyboardInterrupt:
+        print("Server stopped by user.")
+    except Exception as e:
+        print(f"Error starting server: {e}")
+        input("Press Enter to exit...") # 让用户看到错误信息
