@@ -1,6 +1,20 @@
 import asyncio
 import logging
 import os
+import sys
+import traceback
+
+# Global exception handler to keep window open on crash
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    print("Uncaught exception:", file=sys.stderr)
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+    input("Press Enter to exit...")
+
+sys.excepthook = handle_exception
+
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
