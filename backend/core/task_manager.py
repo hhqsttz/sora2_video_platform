@@ -24,7 +24,8 @@ class TaskManager:
                     size=task.size,
                     orientation=task.orientation,
                     image=task.image,
-                    proxy=task.proxy
+                    proxy=task.proxy,
+                    model=task.model
                 )
                 task.result_path = save_video(task.id, data)
                 task.status = TaskStatus.DONE

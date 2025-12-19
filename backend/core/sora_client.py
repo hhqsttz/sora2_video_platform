@@ -17,7 +17,7 @@ class SoraClient:
             "Accept": "application/json"
         }
 
-    async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 5, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None):
+    async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 5, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None, model: str = "sora-2-pro"):
         # 智能判断：如果没有提供 Key 且配置了 Mock 模式，才使用 Mock
         # 只要提供了 Key，就强制尝试真实调用
         should_use_mock = USE_MOCK and not api_key
@@ -29,7 +29,7 @@ class SoraClient:
         request_proxy = proxy if proxy else HTTP_PROXY
 
         if should_use_mock:
-            logger.info(f"[Mock] Generating video for prompt: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}, has_image: {bool(image)}")
+            logger.info(f"[Mock] Generating video for prompt: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}, has_image: {bool(image)}, model: {model}")
             # Simulate duration based on requested duration
             steps = 10
             sleep_time = max(0.5, duration / steps)
@@ -48,13 +48,13 @@ class SoraClient:
         headers = self.default_headers.copy()
         headers["Authorization"] = f"Bearer {api_key}"
 
-        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}")
+        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}, model: {model}")
         async with aiohttp.ClientSession(headers=headers) as session:
 
             # ① 提交生成任务
             try:
                 payload = {
-                    "model": SORA_MODEL, # 使用配置中的 SORA_MODEL (应为 "sora-2-pro")
+                    "model": model, # 使用传入的 model 参数
                     "prompt": prompt,
                     "duration": duration,
                     "size": size,

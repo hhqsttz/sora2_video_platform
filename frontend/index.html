@@ -227,10 +227,20 @@
             
             <div class="form-row">
                 <div class="input-group">
+                    <label for="model">模型 (Model)</label>
+                    <select id="model">
+                        <option value="sora-2-pro">Sora 2 Pro</option>
+                        <option value="sora-2">Sora 2</option>
+                    </select>
+                </div>
+                <div class="input-group">
                     <label for="duration">时长 (秒)</label>
                     <input type="number" id="duration" value="5" min="5" max="15" step="5" />
                     <div style="font-size: 0.8rem; color: #64748b; margin-top: 4px;">推荐 5, 10, 15</div>
                 </div>
+            </div>
+
+            <div class="form-row">
                 <div class="input-group">
                     <label for="size">尺寸 (Size)</label>
                     <select id="size">
@@ -290,6 +300,7 @@
             const apiKeyInput = document.getElementById("apiKey");
             const proxyInput = document.getElementById("proxyUrl");
             const durationInput = document.getElementById("duration");
+            const modelInput = document.getElementById("model");
             const sizeInput = document.getElementById("size");
             const orientationInput = document.getElementById("orientation");
             const imageInput = document.getElementById("imageInput");
@@ -299,6 +310,7 @@
             const apiKey = apiKeyInput.value.trim();
             const proxyUrl = proxyInput.value.trim();
             const duration = parseInt(durationInput.value);
+            const model = modelInput.value;
             const size = sizeInput.value;
             const orientation = orientationInput.value;
 
@@ -353,6 +365,7 @@
                         api_key: apiKey || null,
                         proxy: proxyUrl || null,
                         duration: duration,
+                        model: model,
                         size: size,
                         orientation: orientation,
                         image: imageBase64

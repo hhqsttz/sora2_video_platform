@@ -63,6 +63,7 @@ class TaskRequest(BaseModel):
     prompt: str
     api_key: Optional[str] = None
     duration: Optional[int] = 5
+    model: Optional[Literal["sora-2-pro", "sora-2"]] = "sora-2"
     size: Optional[Literal["large", "medium", "small"]] = "large"
     orientation: Optional[Literal["landscape", "portrait", "square"]] = "landscape"
     image: Optional[str] = None  # Base64 string
@@ -75,11 +76,11 @@ async def create_task(req: TaskRequest):
     if req.image and len(req.image) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image payload too large (max ~10MB raw)")
 
-    logger.info(f"Received new task request with prompt: {req.prompt}, duration: {req.duration}, size: {req.size}, orientation: {req.orientation}, has_image: {bool(req.image)}, proxy: {req.proxy}")
+    logger.info(f"Received new task request with prompt: {req.prompt}, duration: {req.duration}, model: {req.model}, size: {req.size}, orientation: {req.orientation}, has_image: {bool(req.image)}, proxy: {req.proxy}")
     # 注意：VideoTask 类也需要相应更新，或者我们在这里做一个简单的转换
     # 为了最小化修改，我们暂时将 size 和 orientation 组合成 resolution 字符串传递给 VideoTask，或者修改 VideoTask
     # 这里选择修改 VideoTask 更清晰
-    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy)
+    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy, req.model)
     add_task(task)
     asyncio.create_task(manager.run_task(task))
     logger.info(f"Task created with ID: {task.id}")
