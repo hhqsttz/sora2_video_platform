@@ -4,13 +4,14 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, Literal
 
 from core.task import VideoTask
 from core.task_manager import TaskManager
 from state.memory import add_task, get_task, all_tasks
-from config import OUTPUT_DIR
+from config import OUTPUT_DIR, BASE_DIR
 
 # 配置日志
 logging.basicConfig(
@@ -26,6 +27,22 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # 挂载静态文件目录，使得 /outputs/xxx.mp4 可以访问
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+
+# 挂载前端静态资源（如果有 css/js 文件夹），这里简单起见，直接映射根路由到 index.html
+@app.get("/")
+async def read_root():
+    import sys
+    # 如果是打包环境，前端资源通常被打包在 _MEIPASS 或同级目录
+    # 这里我们假设打包时使用了 --add-data "frontend;frontend"，资源会被解压到 sys._MEIPASS/frontend
+    if getattr(sys, 'frozen', False):
+         # PyInstaller temp dir
+        bundle_dir = sys._MEIPASS
+        index_path = os.path.join(bundle_dir, "frontend", "index.html")
+    else:
+        # 开发环境
+        index_path = os.path.join(BASE_DIR, "frontend", "index.html")
+        
+    return FileResponse(index_path)
 
 app.add_middleware(
     CORSMiddleware,

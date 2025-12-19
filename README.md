@@ -42,18 +42,13 @@ pip install -r requirements.txt
 ### 2. 启动后端服务
 
 ```bash
-# 在项目根目录下运行
-python backend/main.py
-# 或者
-python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+# 进入后端目录
+cd backend
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 启动成功后，API 地址为 `http://localhost:8000`。
 视频文件服务地址为 `http://localhost:8000/outputs/`。
-
-### 3. 使用前端
-
-直接在浏览器中打开 `frontend/index.html` 文件即可开始使用。
 
 ## 📖 使用指南
 
@@ -107,6 +102,8 @@ OUTPUT_DIR = "data/outputs"
 
 ## 📝 开发日志
 
+*   **v1.4**: 
+    *   优化资源路径加载逻辑，兼容开发环境。
 *   **v1.3**: 
     *   全面适配 Yunwu.ai API 接口 (`/v1/video/create`, `/v1/video/query`)。
     *   新增 `size` 和 `orientation` 参数控制，移除旧版 `resolution`。

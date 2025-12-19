@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# PyInstaller / Packaging
+build/
+dist/
+*.spec
+
+# Local startup scripts with hardcoded paths
+run.bat
+run.ps1
+build_exe.bat
+
+
+# IDE
+.vscode/
+.idea/

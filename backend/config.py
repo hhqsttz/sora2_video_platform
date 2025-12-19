@@ -19,5 +19,13 @@ MAX_RETRY = 3
 
 # Storage
 # 使用绝对路径，确保无论从哪里启动脚本，都指向项目根目录下的 data/outputs
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+if getattr(sys, 'frozen', False):
+    # 如果是打包后的 exe 环境，sys.executable 是 exe 文件的路径
+    # 我们希望 data 目录在 exe 同级目录下
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # 开发环境
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 OUTPUT_DIR = os.path.join(BASE_DIR, "data", "outputs")
