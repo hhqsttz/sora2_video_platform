@@ -5,13 +5,14 @@ import sys
 BASE_URL = "http://localhost:8000"
 
 def test_text_to_video():
-    print("\n🚀 [1/3] 测试纯文本生成视频 (Text-to-Video)...")
+    print("\n🚀 [1/4] 测试纯文本生成视频 (Text-to-Video)...")
 
     # 1. 提交任务
     payload = {
         "prompt": "Test video text only",
         "duration": 5,
-        "resolution": "1080p"
+        "size": "large",
+        "orientation": "landscape"
     }
     
     print(f"📤 提交任务: {payload}")
@@ -23,6 +24,8 @@ def test_text_to_video():
         print(f"✅ 任务提交成功，ID: {task_id}")
     except Exception as e:
         print(f"❌ 任务提交失败: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"   响应内容: {e.response.text}")
         return
 
     # 2. 轮询状态
@@ -30,7 +33,10 @@ def test_text_to_video():
     
     # 3. 验证视频文件访问
     if result_path:
-        filename = result_path.split("/")[-1].split("\\")[-1]
+        # result_path 是本地文件路径，我们需要提取文件名来构建 URL
+        # 假设 result_path 格式为 data/outputs/xxxx.mp4
+        import os
+        filename = os.path.basename(result_path)
         video_url = f"{BASE_URL}/outputs/{filename}"
         print(f"🎥 验证视频访问: {video_url}")
         try:
@@ -43,7 +49,7 @@ def test_text_to_video():
             print(f"❌ 请求视频出错: {e}")
 
 def test_image_to_video():
-    print("\n🚀 [2/3] 测试图生视频 (Image-to-Video)...")
+    print("\n🚀 [2/4] 测试图生视频 (Image-to-Video)...")
 
     # 模拟一个极简的 Base64 图片 (1x1 pixel PNG)
     fake_image_base64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -52,11 +58,12 @@ def test_image_to_video():
     payload = {
         "prompt": "Test video with image reference",
         "duration": 10,
-        "resolution": "720p",
+        "size": "medium",
+        "orientation": "portrait",
         "image": fake_image_base64
     }
     
-    print(f"📤 提交任务: prompt='...', image='(base64 data...)'")
+    print(f"📤 提交任务: prompt='...', size='medium', orientation='portrait', image='(base64 data...)'")
     try:
         response = requests.post(f"{BASE_URL}/tasks", json=payload)
         response.raise_for_status()
@@ -65,13 +72,37 @@ def test_image_to_video():
         print(f"✅ 任务提交成功，ID: {task_id}")
     except Exception as e:
         print(f"❌ 任务提交失败: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"   响应内容: {e.response.text}")
         return
 
     # 2. 轮询状态
     poll_task(task_id, expect_image=True)
 
+def test_invalid_params():
+    print("\n🚀 [3/4] 测试参数校验 (Invalid Params)...")
+    
+    # 测试非法的 size
+    payload = {
+        "prompt": "Test invalid size",
+        "size": "super-giant", # Invalid
+        "orientation": "landscape"
+    }
+    
+    print(f"📤 提交非法参数任务: {payload}")
+    try:
+        response = requests.post(f"{BASE_URL}/tasks", json=payload)
+        if response.status_code == 422:
+             print("✅ 成功拦截非法参数: 返回 422 Unprocessable Entity")
+             # print(f"   错误详情: {response.json()}")
+        else:
+             print(f"❌ 拦截失败: 期望 422，实际返回 {response.status_code}")
+             print(f"   响应内容: {response.text}")
+    except Exception as e:
+        print(f"❌ 请求出错: {e}")
+
 def test_large_payload():
-    print("\n🚀 [3/3] 测试超大 Payload 拦截...")
+    print("\n🚀 [4/4] 测试超大 Payload 拦截...")
     
     # 模拟 16MB 的 Base64 字符串
     large_image = "A" * (16 * 1024 * 1024)
@@ -115,7 +146,7 @@ def poll_task(task_id, expect_image=False):
             print(f"   - 状态: {status}, 进度: {progress}%, 含图片: {has_image}")
 
             if status == "done":
-                result_path = task['result_path']
+                result_path = task.get('result_path')
                 print(f"🎉 任务完成! 结果路径: {result_path}")
                 break
             elif status == "failed":
@@ -134,6 +165,14 @@ def poll_task(task_id, expect_image=False):
     return result_path
 
 if __name__ == "__main__":
+    # 检查服务是否健康
+    try:
+        requests.get(f"{BASE_URL}/docs", timeout=2)
+    except:
+        print(f"❌ 无法连接到后端服务 {BASE_URL}，请确保服务已启动 (python backend/main.py)")
+        sys.exit(1)
+        
     test_text_to_video()
     test_image_to_video()
+    test_invalid_params()
     test_large_payload()

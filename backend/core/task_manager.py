@@ -21,8 +21,10 @@ class TaskManager:
                     progress_cb=progress_cb, 
                     api_key=task.api_key,
                     duration=task.duration,
-                    resolution=task.resolution,
-                    image=task.image
+                    size=task.size,
+                    orientation=task.orientation,
+                    image=task.image,
+                    proxy=task.proxy
                 )
                 task.result_path = save_video(task.id, data)
                 task.status = TaskStatus.DONE

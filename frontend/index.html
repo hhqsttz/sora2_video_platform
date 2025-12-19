@@ -218,19 +218,33 @@
                 <label for="apiKey">Sora API Key (可选，留空使用 Mock 模式)</label>
                 <input type="password" id="apiKey" placeholder="sk-proj-..." />
             </div>
+
+            <div class="input-group">
+                <label for="proxyUrl">代理地址 (可选)</label>
+                <input type="text" id="proxyUrl" placeholder="http://127.0.0.1:7890" />
+                <div style="font-size: 0.8rem; color: #64748b; margin-top: 4px;">如果你在国内，可能需要填写此项 (例如: http://127.0.0.1:7890)</div>
+            </div>
             
             <div class="form-row">
                 <div class="input-group">
                     <label for="duration">时长 (秒)</label>
-                    <input type="number" id="duration" value="5" min="1" max="60" />
+                    <input type="number" id="duration" value="5" min="5" max="15" step="5" />
+                    <div style="font-size: 0.8rem; color: #64748b; margin-top: 4px;">推荐 5, 10, 15</div>
                 </div>
                 <div class="input-group">
-                    <label for="resolution">分辨率</label>
-                    <select id="resolution">
-                        <option value="1080p">1080p (1920x1080)</option>
-                        <option value="720p">720p (1280x720)</option>
-                        <option value="square">Square (1024x1024)</option>
-                        <option value="portrait">Portrait (1080x1920)</option>
+                    <label for="size">尺寸 (Size)</label>
+                    <select id="size">
+                        <option value="large">Large (Large)</option>
+                        <option value="medium">Medium (Medium)</option>
+                        <option value="small">Small (Small)</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="orientation">方向 (Orientation)</label>
+                    <select id="orientation">
+                        <option value="landscape">Landscape (横屏)</option>
+                        <option value="portrait">Portrait (竖屏)</option>
+                        <option value="square">Square (方形)</option>
                     </select>
                 </div>
             </div>
@@ -265,20 +279,28 @@
             if (savedKey) {
                 document.getElementById('apiKey').value = savedKey;
             }
+            const savedProxy = localStorage.getItem('sora_proxy_url');
+            if (savedProxy) {
+                document.getElementById('proxyUrl').value = savedProxy;
+            }
         });
 
         async function createTask() {
             const promptInput = document.getElementById("prompt");
             const apiKeyInput = document.getElementById("apiKey");
+            const proxyInput = document.getElementById("proxyUrl");
             const durationInput = document.getElementById("duration");
-            const resolutionInput = document.getElementById("resolution");
+            const sizeInput = document.getElementById("size");
+            const orientationInput = document.getElementById("orientation");
             const imageInput = document.getElementById("imageInput");
             const submitBtn = document.getElementById("submitBtn");
             
             const prompt = promptInput.value.trim();
             const apiKey = apiKeyInput.value.trim();
+            const proxyUrl = proxyInput.value.trim();
             const duration = parseInt(durationInput.value);
-            const resolution = resolutionInput.value;
+            const size = sizeInput.value;
+            const orientation = orientationInput.value;
 
             if (!prompt) {
                 alert("请输入视频描述！");
@@ -288,6 +310,9 @@
             // 保存 API Key 到本地
             if (apiKey) {
                 localStorage.setItem('sora_api_key', apiKey);
+            }
+            if (proxyUrl) {
+                localStorage.setItem('sora_proxy_url', proxyUrl);
             }
 
             submitBtn.disabled = true;
@@ -326,8 +351,10 @@
                     body: JSON.stringify({
                         prompt: prompt,
                         api_key: apiKey || null,
+                        proxy: proxyUrl || null,
                         duration: duration,
-                        resolution: resolution,
+                        size: size,
+                        orientation: orientation,
                         image: imageBase64
                     })
                 });
