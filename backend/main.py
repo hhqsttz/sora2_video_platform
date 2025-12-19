@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -21,6 +21,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# 消除 favicon.ico 404 错误日志
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
 
 # 确保输出目录存在
 os.makedirs(OUTPUT_DIR, exist_ok=True)
