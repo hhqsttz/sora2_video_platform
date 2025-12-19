@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sora2 视频生成平台</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--primary-color);
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 16px;
+        }
+        
+        .form-row .input-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            resize: vertical;
+            min-height: 100px;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+
+        input[type="text"], input[type="password"], select, input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-family: inherit;
+            box-sizing: border-box;
+            background-color: white;
+        }
+
+        textarea:focus, input:focus, select:focus {
+            outline: 2px solid var(--primary-color);
+            border-color: transparent;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+        }
+
+        button:hover {
+            background-color: #1d4ed8;
+        }
+
+        button:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        .task-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .task-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            transition: transform 0.2s;
+        }
+
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgb(0 0 0 / 0.05);
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-pending { background: #e2e8f0; color: #475569; }
+        .status-running { background: #dbeafe; color: #1e40af; }
+        .status-done { background: #dcfce7; color: #166534; }
+        .status-failed { background: #fee2e2; color: #991b1b; }
+
+        .progress-bar {
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary-color);
+            transition: width 0.3s ease;
+        }
+
+        .video-preview {
+            margin-top: 12px;
+            width: 100%;
+            border-radius: 4px;
+            background: #000;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 0.875rem;
+        }
+        
+        .video-placeholder {
+             width: 100%;
+             height: 100%;
+             display: flex;
+             align-items: center;
+             justify-content: center;
+             background-color: #eee;
+             color: #666;
+        }
+
+        .prompt-text {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .error-msg {
+            color: #dc2626;
+            font-size: 0.875rem;
+            margin-top: 8px;
+        }
+
+        .task-meta {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Sora2 视频生成平台</h1>
+        
+        <div class="card">
+            <div class="input-group">
+                <label for="apiKey">Sora API Key (可选，留空使用 Mock 模式)</label>
+                <input type="password" id="apiKey" placeholder="sk-proj-..." />
+            </div>
+            
+            <div class="form-row">
+                <div class="input-group">
+                    <label for="duration">时长 (秒)</label>
+                    <input type="number" id="duration" value="5" min="1" max="60" />
+                </div>
+                <div class="input-group">
+                    <label for="resolution">分辨率</label>
+                    <select id="resolution">
+                        <option value="1080p">1080p (1920x1080)</option>
+                        <option value="720p">720p (1280x720)</option>
+                        <option value="square">Square (1024x1024)</option>
+                        <option value="portrait">Portrait (1080x1920)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="prompt">视频描述 (Prompt)</label>
+                <textarea id="prompt" placeholder="描述你想生成的视频内容，例如：一只戴着墨镜的猫在海边冲浪..."></textarea>
+            </div>
+            
+            <div class="input-group">
+                <label for="imageInput">参考图片 (可选)</label>
+                <input type="file" id="imageInput" accept="image/*" style="padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; width: 100%; box-sizing: border-box; background: white;">
+            </div>
+
+            <button id="submitBtn" onclick="createTask()">✨ 生成视频</button>
+        </div>
+
+        <div id="tasksContainer">
+            <h2 style="margin-bottom: 20px; font-size: 1.25rem;">任务列表</h2>
+            <div id="taskList" class="task-grid">
+                <!-- 任务卡片将在这里动态插入 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8000";
+
+        // 从 localStorage 加载 API Key
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedKey = localStorage.getItem('sora_api_key');
+            if (savedKey) {
+                document.getElementById('apiKey').value = savedKey;
+            }
+        });
+
+        async function createTask() {
+            const promptInput = document.getElementById("prompt");
+            const apiKeyInput = document.getElementById("apiKey");
+            const durationInput = document.getElementById("duration");
+            const resolutionInput = document.getElementById("resolution");
+            const imageInput = document.getElementById("imageInput");
+            const submitBtn = document.getElementById("submitBtn");
+            
+            const prompt = promptInput.value.trim();
+            const apiKey = apiKeyInput.value.trim();
+            const duration = parseInt(durationInput.value);
+            const resolution = resolutionInput.value;
+
+            if (!prompt) {
+                alert("请输入视频描述！");
+                return;
+            }
+
+            // 保存 API Key 到本地
+            if (apiKey) {
+                localStorage.setItem('sora_api_key', apiKey);
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = "提交中...";
+
+            try {
+                let imageBase64 = null;
+                if (imageInput.files.length > 0) {
+                    const file = imageInput.files[0];
+                    if (file.size > 10 * 1024 * 1024) { // 10MB
+                        alert("图片大小不能超过 10MB");
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = "✨ 生成视频";
+                        return;
+                    }
+
+                    // 如果图片大于 2MB，进行压缩
+                    if (file.size > 2 * 1024 * 1024) {
+                        submitBtn.textContent = "正在压缩图片...";
+                        imageBase64 = await compressImage(file);
+                    } else {
+                        // 直接读取
+                        imageBase64 = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.onerror = error => reject(error);
+                            reader.readAsDataURL(file);
+                        });
+                    }
+                    submitBtn.textContent = "提交中...";
+                }
+
+                const res = await fetch(`${API_BASE}/tasks`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        api_key: apiKey || null,
+                        duration: duration,
+                        resolution: resolution,
+                        image: imageBase64
+                    })
+                });
+                
+                if (res.ok) {
+                    promptInput.value = "";
+                    imageInput.value = ""; // 清空文件选择
+                    refresh(); // 立即刷新列表
+                } else {
+                    const err = await res.json();
+                    alert("提交失败: " + (err.detail || "未知错误"));
+                }
+            } catch (e) {
+                console.error(e);
+                alert("网络错误: " + e.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "✨ 生成视频";
+            }
+        }
+
+        function compressImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        const MAX_SIZE = 2048;
+
+                        if (width > MAX_SIZE || height > MAX_SIZE) {
+                            if (width > height) {
+                                height *= MAX_SIZE / width;
+                                width = MAX_SIZE;
+                            } else {
+                                width *= MAX_SIZE / height;
+                                height = MAX_SIZE;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // 压缩为 JPEG，质量 0.8
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                        resolve(dataUrl);
+                    };
+                    img.onerror = (err) => reject(err);
+                };
+                reader.onerror = (err) => reject(err);
+            });
+        }
+
+        async function refresh() {
+            try {
+                const res = await fetch(`${API_BASE}/tasks`);
+                const tasks = await res.json();
+                renderTasks(tasks);
+            } catch (e) {
+                console.error("刷新任务失败:", e);
+            }
+        }
+
+        function renderTasks(tasks) {
+            const container = document.getElementById("taskList");
+            const sortedTasks = [...tasks].reverse();
+            
+            container.innerHTML = sortedTasks.map(task => {
+                let statusClass = `status-${task.status}`;
+                let mediaContent = '';
+                
+                if (task.status === 'done' && task.result_path) {
+                    const filename = task.result_path.split(/[/\\]/).pop();
+                    const videoUrl = `${API_BASE}/outputs/${filename}`;
+                    mediaContent = `
+                        <video class="video-preview" controls>
+                            <source src="${videoUrl}" type="video/mp4">
+                            您的浏览器不支持 Video 标签
+                        </video>
+                        <a href="${videoUrl}" download style="display:block; text-align:center; margin-top:8px; color:var(--primary-color); text-decoration:none; font-size:0.875rem;">⬇️ 下载视频</a>
+                    `;
+                } else if (task.status === 'failed') {
+                    mediaContent = `<div class="error-msg">❌ 失败: ${task.error || '未知错误'}</div>`;
+                } else {
+                    mediaContent = `
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${task.progress}%"></div>
+                        </div>
+                        <div style="text-align: right; font-size: 0.75rem; color: #64748b; margin-top: 4px;">
+                            ${task.progress}%
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="task-card">
+                        <div class="task-header">
+                            <span title="${task.id}">ID: ...${task.id.slice(-6)}</span>
+                            <span class="status-badge ${statusClass}">${task.status}</span>
+                        </div>
+                        <div class="task-meta">
+                            ⏱️ ${task.duration}s | 📐 ${task.resolution}
+                            ${task.has_image ? '| 🖼️ 含参考图' : ''}
+                        </div>
+                        <div class="prompt-text" title="${task.prompt}">${task.prompt}</div>
+                        ${mediaContent}
+                    </div>
+                `;
+            }).join("");
+        }
+
+        setInterval(refresh, 2000);
+        refresh();
+    </script>
+</body>
+</html>
