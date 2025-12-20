@@ -164,7 +164,7 @@ if __name__ == "__main__":
     # 启动服务器
     # 注意：在打包环境中不要使用 reload=True
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
     except KeyboardInterrupt:
         print("Server stopped by user.")
     except Exception as e:
