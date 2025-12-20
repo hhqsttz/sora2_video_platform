@@ -76,10 +76,10 @@ manager = TaskManager()
 class TaskRequest(BaseModel):
     prompt: Optional[str] = ""
     api_key: Optional[str] = None
-    duration: Optional[int] = 5
+    duration: Optional[int] = 10
     model: Optional[Literal["sora-2-pro", "sora-2"]] = "sora-2"
-    size: Optional[Literal["large", "medium", "small"]] = "large"
-    orientation: Optional[Literal["landscape", "portrait", "square"]] = "landscape"
+    size: Optional[Literal["large", "small"]] = "large"
+    orientation: Optional[Literal["landscape", "portrait"]] = "landscape"
     image: Optional[str] = None  # Base64 string
     proxy: Optional[str] = None  # User provided proxy URL
     mode: Optional[str] = "studio" # "studio" or "storyboard"

@@ -655,7 +655,6 @@
                     <div class="input-group">
                         <label for="duration">时长</label>
                         <select id="duration">
-                            <option value="5">5 秒</option>
                             <option value="10">10 秒</option>
                             <option value="15">15 秒</option>
                         </select>
@@ -667,8 +666,7 @@
                         <label for="size">画质</label>
                         <select id="size">
                             <option value="large">1080p 高清</option>
-                            <option value="medium">720p 标准</option>
-                            <option value="small">480p 流畅</option>
+                            <option value="small">720p 标准</option>
                         </select>
                     </div>
                     <div class="input-group">
@@ -676,7 +674,6 @@
                         <select id="orientation">
                             <option value="landscape">16:9 横屏</option>
                             <option value="portrait">9:16 竖屏</option>
-                            <option value="square">1:1 方形</option>
                         </select>
                     </div>
                 </div>
@@ -709,6 +706,66 @@
                     </div>
                 </div>
 
+                <!-- Global Settings -->
+                <div style="background: rgba(255,255,255,0.5); padding: 20px; border-radius: 16px; margin-bottom: 24px; border: 2px solid var(--border-color);">
+                    <div style="font-weight: 700; color: #1a2e05; margin-bottom: 15px; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px;">
+                        🌍 全局设置 (Global Settings)
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>API Key</label>
+                        <input type="password" id="sb-apiKey" placeholder="sk-proj-..." />
+                    </div>
+
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>模型 (Model)</label>
+                            <select id="sb-model">
+                                <option value="sora-2">Sora 2</option>
+                                <option value="sora-2-pro">Sora 2 Pro</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>总时长 (Total Duration)</label>
+                            <select id="sb-total-duration" onchange="updateRemainingTime()">
+                                <option value="10">10s</option>
+                                <option value="15">15s</option>
+                                <option value="25">25s</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>比例 (Aspect Ratio)</label>
+                            <select id="sb-orientation">
+                                <option value="landscape">16:9 横屏</option>
+                                <option value="portrait">9:16 竖屏</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>参考图 (可选，用于视频起始帧)</label>
+                        <div class="file-upload" onclick="document.getElementById('sb-imageInput').click()">
+                            <input type="file" id="sb-imageInput" accept="image/*" onchange="updateSbFileName(this)" style="display: none;">
+                            <div class="file-upload-content" id="sb-fileLabel">
+                                <span style="font-size: 1.5rem; display: block; margin-bottom: 5px;">🖼️</span>
+                                点击上传首帧图片
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div style="font-weight: 700; color: #1a2e05;">
+                        📽️ 分镜列表 (Scenes)
+                    </div>
+                    <div style="font-size: 0.9rem; font-weight: 600; background: #fff; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border-color);">
+                        剩余可用时长: <span id="time-remaining" style="color: var(--primary-color);">10s</span>
+                    </div>
+                </div>
+
                 <div id="storyboard-container">
                     <!-- Scenes will be added here -->
                 </div>
@@ -718,20 +775,7 @@
                 </button>
 
                 <div style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-                    <div class="form-row">
-                        <div class="input-group">
-                            <label>API Key</label>
-                            <input type="password" id="sb-apiKey" placeholder="sk-proj-..." />
-                        </div>
-                        <div class="input-group">
-                            <label>模型</label>
-                            <select id="sb-model">
-                                <option value="sora-2">Sora 2</option>
-                                <option value="sora-2-pro">Sora 2 Pro</option>
-                            </select>
-                        </div>
-                    </div>
-                    <button id="sb-submitBtn" onclick="submitStoryboard()">🚀 生成所有场景 (Generate All)</button>
+                    <button id="sb-submitBtn" onclick="submitStoryboard()">🚀 生成视频 (Generate Video)</button>
                 </div>
             </div>
 
@@ -783,33 +827,9 @@
                     <div class="scene-badge">场景 ${id} (Scene ${id})</div>
                     <button class="remove-scene-btn" onclick="removeScene(${id})" title="删除场景">×</button>
                 </div>
-                <div class="form-row">
-                    <div class="input-group">
-                        <label>时长 (Duration)</label>
-                        <select id="scene-duration-${id}">
-                            <option value="5">5s</option>
-                            <option value="10">10s</option>
-                            <option value="15">15s</option>
-                        </select>
-                    </div>
-                    <div class="input-group">
-                        <label>画质 & 比例</label>
-                        <select id="scene-quality-${id}">
-                            <option value="1080p_16:9">1080p | 16:9</option>
-                            <option value="1080p_9:16">1080p | 9:16</option>
-                            <option value="720p_16:9">720p | 16:9</option>
-                        </select>
-                    </div>
-                </div>
                 <div class="input-group">
-                    <label>参考图 (可选)</label>
-                    <div class="file-upload" onclick="document.getElementById('scene-img-${id}').click()">
-                        <input type="file" id="scene-img-${id}" accept="image/*" style="display: none;" onchange="updateSceneFileName(this, ${id})">
-                        <div class="file-upload-content" id="scene-fileLabel-${id}">
-                            <span style="font-size: 1.5rem; display: block; margin-bottom: 5px;">🖼️</span>
-                            点击上传图片
-                        </div>
-                    </div>
+                    <label>本场景时长 (Duration)</label>
+                    <input type="number" id="scene-duration-${id}" step="0.1" min="0.1" value="3.0" onchange="updateRemainingTime()" placeholder="e.g. 2.5">
                 </div>
                 <div class="input-group">
                     <label>场景描述 (Prompt)</label>
@@ -819,18 +839,55 @@
             container.appendChild(div);
 
             // Init custom selects for new elements
-            setupCustomSelect(document.getElementById(`scene-duration-${id}`));
-            setupCustomSelect(document.getElementById(`scene-quality-${id}`));
+            // setupCustomSelect(document.getElementById(`scene-duration-${id}`)); // Input type doesn't need custom select
+            
+            updateRemainingTime();
         }
 
         function removeScene(id) {
             const el = document.getElementById(`scene-${id}`);
             if (el) el.remove();
+            updateRemainingTime();
+        }
+        
+        function updateRemainingTime() {
+            const totalDuration = parseFloat(document.getElementById('sb-total-duration').value) || 10;
+            let usedDuration = 0;
+            
+            document.querySelectorAll('[id^="scene-duration-"]').forEach(el => {
+                usedDuration += parseFloat(el.value) || 0;
+            });
+            
+            // Fix float precision issues
+            usedDuration = Math.round(usedDuration * 10) / 10;
+            const remaining = Math.round((totalDuration - usedDuration) * 10) / 10;
+            
+            const remainingEl = document.getElementById('time-remaining');
+            
+            if (remaining < 0) {
+                remainingEl.textContent = `${remaining}s (超出!)`;
+                remainingEl.style.color = '#ef4444';
+            } else {
+                remainingEl.textContent = `${remaining}s`;
+                remainingEl.style.color = 'var(--primary-color)';
+            }
+        }
+        
+        function updateSbFileName(input) {
+            const label = document.getElementById('sb-fileLabel');
+            if (input.files && input.files[0]) {
+                label.innerHTML = `<span style="color: #4ade80">✓ ${input.files[0].name}</span>`;
+            } else {
+                label.innerHTML = '<span style="font-size: 1.5rem; display: block; margin-bottom: 5px;">🖼️</span>点击上传首帧图片';
+            }
         }
 
         async function submitStoryboard() {
             const apiKey = document.getElementById('sb-apiKey').value.trim();
             const model = document.getElementById('sb-model').value;
+            const totalDuration = parseInt(document.getElementById('sb-total-duration').value);
+            const orientation = document.getElementById('sb-orientation').value;
+            const imageInput = document.getElementById('sb-imageInput');
             const submitBtn = document.getElementById('sb-submitBtn');
 
             if (!apiKey) {
@@ -845,96 +902,91 @@
                 return;
             }
 
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '⏳ 正在处理...';
-
-            let submittedCount = 0;
-            let errors = [];
+            // Calculate prompt and validation
+            let aggregatedPrompt = "";
+            let calculatedDuration = 0;
+            let shotIndex = 1;
+            let hasPrompt = false;
 
             for (const card of sceneCards) {
                 const idStr = card.id.replace('scene-', '');
                 const prompt = document.getElementById(`scene-prompt-${idStr}`).value.trim();
-                const duration = parseInt(document.getElementById(`scene-duration-${idStr}`).value);
-                const imageInput = document.getElementById(`scene-img-${idStr}`);
+                const duration = parseFloat(document.getElementById(`scene-duration-${idStr}`).value);
                 
-                // Construct pseudo-prompt to indicate scene number if backend supported metadata
-                const finalPrompt = `[Scene ${idStr}] ${prompt}`; 
-
-                const quality = document.getElementById(`scene-quality-${idStr}`).value;
-                let size = "large";
-                let orientation = "landscape";
+                if (prompt) hasPrompt = true;
                 
-                if (quality && quality.includes('_')) {
-                    const [rawSize, rawOrientation] = quality.split('_');
-                    
-                    if (rawSize === '1080p') size = 'large';
-                    else if (rawSize === '720p') size = 'medium';
-                    
-                    if (rawOrientation === '16:9') orientation = 'landscape';
-                    else if (rawOrientation === '9:16') orientation = 'portrait';
-                }
+                aggregatedPrompt += `Shot ${shotIndex}:\nduration: ${duration}sec\nScene: ${prompt || "Continue previous action"}\n\n`;
+                calculatedDuration += duration;
+                shotIndex++;
+            }
 
-                try {
-                    let imageBase64 = null;
-                    if (imageInput && imageInput.files.length > 0) {
-                        const file = imageInput.files[0];
-                        if (file.size > 10 * 1024 * 1024) {
-                             errors.push(`场景 ${idStr}: 图片过大`);
-                             continue;
-                        }
-                        imageBase64 = await new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result);
-                            reader.onerror = error => reject(error);
-                            reader.readAsDataURL(file);
-                        });
+            // Fix precision before comparing
+            calculatedDuration = Math.round(calculatedDuration * 10) / 10;
+            const diff = Math.abs(calculatedDuration - totalDuration);
+
+            if (diff > 0.1) { // Allow slight epsilon, though rounding should handle it
+                alert(`时间分配错误！\n总时长: ${totalDuration}s\n分镜总和: ${calculatedDuration}s\n请调整分镜时长使总和等于总时长。`);
+                return;
+            }
+            
+            if (!hasPrompt) {
+                alert("请至少为一个场景填写描述！");
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '⏳ 正在提交...';
+
+            try {
+                let imageBase64 = null;
+                if (imageInput && imageInput.files.length > 0) {
+                    const file = imageInput.files[0];
+                    if (file.size > 10 * 1024 * 1024) {
+                         alert("参考图过大 (Max 10MB)");
+                         submitBtn.disabled = false;
+                         return;
                     }
-
-                    if (!prompt && !imageBase64) {
-                        errors.push(`场景 ${idStr}: 需提供描述或图片`);
-                        continue;
-                    }
-
-                    // Submit task
-                    const res = await fetch(`${API_BASE}/tasks`, {
-                        method: "POST",
-                        headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify({
-                            prompt: finalPrompt,
-                            api_key: apiKey,
-                            duration: duration,
-                            model: model,
-                            size: size,
-                            orientation: orientation,
-                            image: imageBase64,
-                            mode: 'storyboard' // Explicitly set mode to storyboard
-                        })
+                    imageBase64 = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = error => reject(error);
+                        reader.readAsDataURL(file);
                     });
-
-                    if (res.ok) {
-                        submittedCount++;
-                    } else {
-                        const err = await res.json();
-                        errors.push(`场景 ${idStr}: ${err.detail || "提交失败"}`);
-                    }
-                } catch (e) {
-                    errors.push(`场景 ${idStr}: ${e.message}`);
                 }
+
+                // Size mapping for backend
+                let size = "large"; // Default to large, backend uses orientation to determine resolution
+
+                // Submit single task
+                const res = await fetch(`${API_BASE}/tasks`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        prompt: aggregatedPrompt.trim(),
+                        api_key: apiKey,
+                        duration: totalDuration,
+                        model: model,
+                        size: size,
+                        orientation: orientation,
+                        image: imageBase64,
+                        mode: 'storyboard'
+                    })
+                });
+
+                if (res.ok) {
+                    refresh();
+                    alert("故事板任务提交成功！");
+                    // Reset UI? Maybe not to allow edits
+                } else {
+                    const err = await res.json();
+                    alert(`提交失败: ${err.detail || "未知错误"}`);
+                }
+            } catch (e) {
+                alert(`网络错误: ${e.message}`);
             }
 
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '🚀 生成所有场景 (Generate All)';
-            
-            if (submittedCount > 0) {
-                refresh();
-                if (errors.length === 0) {
-                    alert(`成功提交 ${submittedCount} 个场景任务！`);
-                } else {
-                    alert(`提交了 ${submittedCount} 个任务，但有错误：\n${errors.join('\n')}`);
-                }
-            } else {
-                alert(`提交失败：\n${errors.join('\n')}`);
-            }
+            submitBtn.innerHTML = '🚀 生成视频 (Generate Video)';
         }
 
         function updateFileName(input) {

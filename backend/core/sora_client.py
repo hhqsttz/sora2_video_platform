@@ -18,7 +18,7 @@ class SoraClient:
             "Accept": "application/json"
         }
 
-    async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 5, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None, model: str = "sora-2-pro", mode: str = "studio"):
+    async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 10, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None, model: str = "sora-2-pro", mode: str = "studio"):
         # 优先使用用户传入的代理，否则使用全局配置的代理
         request_proxy = proxy if proxy else HTTP_PROXY
 
@@ -35,13 +35,39 @@ class SoraClient:
             del headers["Content-Type"]
 
         # Map friendly names to API values
-        # API expects "large", "medium", "landscape", "portrait" etc. directly
+        # API expects specific resolution strings (e.g. "1920x1080") instead of "large"/"medium"
         api_orientation = orientation
-        api_size = size
-
+        
+        if mode == 'storyboard':
+            # Storyboard mode: size is aspect ratio string (e.g. "16x9"), ignores specific resolution
+            if orientation == "portrait":
+                api_size = "9x16"
+            else: # landscape
+                api_size = "16x9"
+        else:
+            # Studio mode: Calculate resolution based on size and orientation
+            # Supported sizes: large (1080p), small (720p)
+            # Supported orientations: landscape (16:9), portrait (9:16)
+            if size == "large":
+                if orientation == "portrait":
+                    api_size = "1080x1920"
+                else: # landscape (default)
+                    api_size = "1920x1080"
+            elif size == "small": # re-purposing small as 720p
+                if orientation == "portrait":
+                    api_size = "720x1280"
+                else: # landscape
+                    api_size = "1280x720"
+            else: # default/fallback to large landscape
+                api_size = "1920x1080"
+            
+            # Fallback if size is already in resolution format (e.g. passed directly)
+            if "x" in size and size not in ["large", "medium", "small"]:
+                 api_size = size
+ 
         logger.info(f"Sending generation request to Sora ({mode}): {prompt}, duration: {duration}s, size: {api_size}, orientation: {api_orientation}, model: {model}, has_image: {bool(image)}")
         async with aiohttp.ClientSession(headers=headers) as session:
-
+ 
             # ① 提交生成任务
             try:
                 if mode == 'storyboard':
@@ -64,15 +90,12 @@ class SoraClient:
                     data.add_field('prompt', prompt)
                     data.add_field('model', model)
                     data.add_field('size', api_size)
-                    data.add_field('orientation', api_orientation)
-                    
-                    # Pass duration as query param to avoid "cannot unmarshal string into Go struct field ... of type int" error
-                    params = {"duration": duration}
-
+                    data.add_field('seconds', str(duration))
+                    data.add_field('watermark', 'false')
+                    data.add_field('private', 'false')
                     async with session.post(
                         SORA_STORYBOARD_URL,
                         data=data,
-                        params=params,
                         proxy=request_proxy
                     ) as resp:
                         if not resp.ok:
