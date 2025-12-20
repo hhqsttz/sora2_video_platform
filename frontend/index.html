@@ -860,9 +860,17 @@
                 // Construct pseudo-prompt to indicate scene number if backend supported metadata
                 const finalPrompt = `[Scene ${idStr}] ${prompt}`; 
 
+                const quality = document.getElementById(`scene-quality-${idStr}`).value;
+                let size = "1080p";
+                let orientation = "16:9";
+                
+                if (quality && quality.includes('_')) {
+                    [size, orientation] = quality.split('_');
+                }
+
                 try {
                     let imageBase64 = null;
-                    if (imageInput.files.length > 0) {
+                    if (imageInput && imageInput.files.length > 0) {
                         const file = imageInput.files[0];
                         if (file.size > 10 * 1024 * 1024) {
                              errors.push(`场景 ${idStr}: 图片过大`);
@@ -890,8 +898,8 @@
                             api_key: apiKey,
                             duration: duration,
                             model: model,
-                            size: "large", // Default for storyboard
-                            orientation: "landscape",
+                            size: size,
+                            orientation: orientation,
                             image: imageBase64
                         })
                     });

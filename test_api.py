@@ -1,129 +1,44 @@
 import requests
 import time
 import sys
+import base64
+import os
 
 BASE_URL = "http://localhost:8000"
 
-def test_text_to_video():
-    print("\n🚀 [1/4] 测试纯文本生成视频 (Text-to-Video)...")
+# ANSI Colors
+class Colors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
-    # 1. 提交任务
-    payload = {
-        "prompt": "Test video text only",
-        "duration": 5,
-        "size": "large",
-        "orientation": "landscape"
-    }
-    
-    print(f"📤 提交任务: {payload}")
-    try:
-        response = requests.post(f"{BASE_URL}/tasks", json=payload)
-        response.raise_for_status()
-        data = response.json()
-        task_id = data["task_id"]
-        print(f"✅ 任务提交成功，ID: {task_id}")
-    except Exception as e:
-        print(f"❌ 任务提交失败: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"   响应内容: {e.response.text}")
-        return
+def print_header(msg):
+    print(f"\n{Colors.HEADER}{Colors.BOLD}{msg}{Colors.ENDC}")
 
-    # 2. 轮询状态
-    result_path = poll_task(task_id, expect_image=False)
-    
-    # 3. 验证视频文件访问
-    if result_path:
-        # result_path 是本地文件路径，我们需要提取文件名来构建 URL
-        # 假设 result_path 格式为 data/outputs/xxxx.mp4
-        import os
-        filename = os.path.basename(result_path)
-        video_url = f"{BASE_URL}/outputs/{filename}"
-        print(f"🎥 验证视频访问: {video_url}")
-        try:
-            v_res = requests.head(video_url)
-            if v_res.status_code == 200:
-                print("✅ 视频文件可访问")
-            else:
-                print(f"❌ 视频文件无法访问: {v_res.status_code}")
-        except Exception as e:
-            print(f"❌ 请求视频出错: {e}")
+def print_success(msg):
+    print(f"{Colors.OKGREEN}✅ {msg}{Colors.ENDC}")
 
-def test_image_to_video():
-    print("\n🚀 [2/4] 测试图生视频 (Image-to-Video)...")
+def print_fail(msg):
+    print(f"{Colors.FAIL}❌ {msg}{Colors.ENDC}")
 
-    # 模拟一个极简的 Base64 图片 (1x1 pixel PNG)
-    fake_image_base64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+def print_info(msg):
+    print(f"{Colors.OKCYAN}ℹ️  {msg}{Colors.ENDC}")
 
-    # 1. 提交任务
-    payload = {
-        "prompt": "Test video with image reference",
-        "duration": 10,
-        "size": "medium",
-        "orientation": "portrait",
-        "image": fake_image_base64
-    }
-    
-    print(f"📤 提交任务: prompt='...', size='medium', orientation='portrait', image='(base64 data...)'")
-    try:
-        response = requests.post(f"{BASE_URL}/tasks", json=payload)
-        response.raise_for_status()
-        data = response.json()
-        task_id = data["task_id"]
-        print(f"✅ 任务提交成功，ID: {task_id}")
-    except Exception as e:
-        print(f"❌ 任务提交失败: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"   响应内容: {e.response.text}")
-        return
-
-    # 2. 轮询状态
-    poll_task(task_id, expect_image=True)
-
-def test_invalid_params():
-    print("\n🚀 [3/4] 测试参数校验 (Invalid Params)...")
-    
-    # 测试非法的 size
-    payload = {
-        "prompt": "Test invalid size",
-        "size": "super-giant", # Invalid
-        "orientation": "landscape"
-    }
-    
-    print(f"📤 提交非法参数任务: {payload}")
-    try:
-        response = requests.post(f"{BASE_URL}/tasks", json=payload)
-        if response.status_code == 422:
-             print("✅ 成功拦截非法参数: 返回 422 Unprocessable Entity")
-             # print(f"   错误详情: {response.json()}")
-        else:
-             print(f"❌ 拦截失败: 期望 422，实际返回 {response.status_code}")
-             print(f"   响应内容: {response.text}")
-    except Exception as e:
-        print(f"❌ 请求出错: {e}")
-
-def test_large_payload():
-    print("\n🚀 [4/4] 测试超大 Payload 拦截...")
-    
-    # 模拟 16MB 的 Base64 字符串
-    large_image = "A" * (16 * 1024 * 1024)
-    
-    payload = {
-        "prompt": "Test large payload",
-        "image": large_image
-    }
-    
-    print(f"📤 提交 16MB 的 Payload...")
-    try:
-        response = requests.post(f"{BASE_URL}/tasks", json=payload)
-        if response.status_code == 413:
-            print("✅ 成功拦截: 返回 413 Payload Too Large")
-        else:
-            print(f"❌ 拦截失败: 返回 {response.status_code}")
-    except Exception as e:
-        print(f"❌ 请求出错: {e}")
+def get_base64_image():
+    # Create a simple 100x100 red image
+    # This is a minimal valid PNG
+    # 100x100 red square
+    base64_str = "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAZdEVYdFNvZnR3YXJlAHBhaW50Lm5ldCA0LjAuMjWx0ZW4AAAAJUlEQVR42u3BAQ0AAADCoPdPbQ8HFAAAAAAAAAAAAAAAAAAAAAAAAAAAvwZn+gABzKpPEAAAAABJRU5ErkJggg=="
+    return f"data:image/png;base64,{base64_str}"
 
 def poll_task(task_id, expect_image=False):
-    print("🔄 开始轮询任务状态...")
+    print_info(f"Start polling task {task_id}...")
     start_time = time.time()
     result_path = None
     
@@ -137,42 +52,189 @@ def poll_task(task_id, expect_image=False):
             progress = task.get("progress", 0)
             has_image = task.get("has_image", False)
             
-            # 验证 has_image 字段
+            # Verify has_image field
             if expect_image and not has_image:
-                print(f"❌ 错误: 期望 has_image=True，但实际为 {has_image}")
+                print_fail(f"Expected has_image=True, but got {has_image}")
             elif not expect_image and has_image:
-                print(f"❌ 错误: 期望 has_image=False，但实际为 {has_image}")
+                print_fail(f"Expected has_image=False, but got {has_image}")
 
-            print(f"   - 状态: {status}, 进度: {progress}%, 含图片: {has_image}")
+            # Overwrite line for cleaner output
+            sys.stdout.write(f"\r   Status: {status}, Progress: {progress}%   ")
+            sys.stdout.flush()
 
             if status == "done":
+                print() # New line
                 result_path = task.get('result_path')
-                print(f"🎉 任务完成! 结果路径: {result_path}")
+                print_success(f"Task completed! Result path: {result_path}")
                 break
             elif status == "failed":
-                print(f"❌ 任务失败: {task.get('error')}")
+                print()
+                print_fail(f"Task failed: {task.get('error')}")
                 break
             
-            if time.time() - start_time > 60:
-                print("❌ 测试超时")
+            if time.time() - start_time > 300: # 5 minutes timeout
+                print()
+                print_fail("Test timeout (300s)")
                 break
 
-            time.sleep(1)
+            time.sleep(2)
         except Exception as e:
-            print(f"❌ 轮询出错: {e}")
+            print()
+            print_fail(f"Polling error: {e}")
             break
             
     return result_path
 
+def verify_video_access(result_path):
+    if not result_path:
+        return
+    
+    filename = os.path.basename(result_path)
+    video_url = f"{BASE_URL}/outputs/{filename}"
+    print_info(f"Verifying video access: {video_url}")
+    try:
+        v_res = requests.head(video_url)
+        if v_res.status_code == 200:
+            print_success("Video file is accessible via HTTP")
+        else:
+            print_fail(f"Video file not accessible: {v_res.status_code}")
+    except Exception as e:
+        print_fail(f"Request error: {e}")
+
+def test_text_to_video():
+    print_header("[1/5] Test Text-to-Video (Standard)")
+
+    payload = {
+        "prompt": "A cinematic drone shot of a futuristic cyberpunk city at night, neon lights, rain reflections",
+        "duration": 5,
+        "size": "large",
+        "orientation": "landscape",
+        "model": "sora-2"
+    }
+    
+    print_info(f"Submitting task: {payload}")
+    try:
+        response = requests.post(f"{BASE_URL}/tasks", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        task_id = data["task_id"]
+        print_success(f"Task submitted, ID: {task_id}")
+        
+        result_path = poll_task(task_id, expect_image=False)
+        verify_video_access(result_path)
+        
+    except Exception as e:
+        print_fail(f"Submission failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+             print(f"   Response: {e.response.text}")
+
+def test_image_to_video():
+    print_header("[2/5] Test Image-to-Video (Storyboard)")
+
+    # 100x100 red square
+    fake_image_base64 = get_base64_image()
+
+    payload = {
+        "prompt": "Animate this red square turning into a blue circle, 3d render",
+        "duration": 10, # Testing the duration fix
+        "size": "medium",
+        "orientation": "square",
+        "image": fake_image_base64
+    }
+    
+    print_info(f"Submitting task with Image...")
+    try:
+        response = requests.post(f"{BASE_URL}/tasks", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        task_id = data["task_id"]
+        print_success(f"Task submitted, ID: {task_id}")
+        
+        result_path = poll_task(task_id, expect_image=True)
+        verify_video_access(result_path)
+
+    except Exception as e:
+        print_fail(f"Submission failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+             print(f"   Response: {e.response.text}")
+
+def test_parameter_combinations():
+    print_header("[3/5] Test Parameter Combinations (Portrait, Small)")
+
+    payload = {
+        "prompt": "A vertical video of a waterfall",
+        "duration": 5,
+        "size": "small",
+        "orientation": "portrait"
+    }
+    
+    print_info(f"Submitting task: {payload}")
+    try:
+        response = requests.post(f"{BASE_URL}/tasks", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        task_id = data["task_id"]
+        print_success(f"Task submitted, ID: {task_id}")
+        # We don't poll here to save time, just check submission
+        print_success("Submission accepted.")
+    except Exception as e:
+        print_fail(f"Submission failed: {e}")
+
+def test_invalid_params():
+    print_header("[4/5] Test Invalid Parameters")
+    
+    payload = {
+        "prompt": "Test invalid size",
+        "size": "invalid_size_option", 
+        "orientation": "landscape"
+    }
+    
+    print_info(f"Submitting invalid payload: {payload}")
+    try:
+        response = requests.post(f"{BASE_URL}/tasks", json=payload)
+        if response.status_code == 422:
+             print_success("Correctly rejected with 422")
+        else:
+             print_fail(f"Failed to reject: {response.status_code}")
+             print(response.text)
+    except Exception as e:
+        print_fail(f"Request error: {e}")
+
+def test_large_payload():
+    print_header("[5/5] Test Large Payload Protection")
+    
+    # 16MB string
+    large_image = "A" * (16 * 1024 * 1024)
+    
+    payload = {
+        "prompt": "Test large payload",
+        "image": large_image
+    }
+    
+    print_info(f"Submitting 16MB payload...")
+    try:
+        response = requests.post(f"{BASE_URL}/tasks", json=payload)
+        if response.status_code == 413:
+            print_success("Correctly rejected with 413 Payload Too Large")
+        else:
+            print_fail(f"Failed to reject: {response.status_code}")
+    except Exception as e:
+        print_fail(f"Request error: {e}")
+
 if __name__ == "__main__":
-    # 检查服务是否健康
+    # Check health
     try:
         requests.get(f"{BASE_URL}/docs", timeout=2)
     except:
-        print(f"❌ 无法连接到后端服务 {BASE_URL}，请确保服务已启动 (python backend/main.py)")
+        print_fail(f"Cannot connect to {BASE_URL}. Is the backend running?")
         sys.exit(1)
         
+    print("Starting Sora2 Platform Comprehensive Tests...")
+    
     test_text_to_video()
     test_image_to_video()
+    test_parameter_combinations()
     test_invalid_params()
     test_large_payload()
+    
+    print("\n✅ All tests completed!")

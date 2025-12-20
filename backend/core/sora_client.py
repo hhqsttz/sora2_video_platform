@@ -34,7 +34,22 @@ class SoraClient:
         if image and "Content-Type" in headers:
             del headers["Content-Type"]
 
-        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}, model: {model}, has_image: {bool(image)}")
+        # Map friendly names to API values
+        orientation_map = {
+            "landscape": "16:9",
+            "portrait": "9:16",
+            "square": "1:1"
+        }
+        api_orientation = orientation_map.get(orientation, orientation)
+
+        size_map = {
+            "large": "1080p",
+            "medium": "720p",
+            "small": "480p"
+        }
+        api_size = size_map.get(size, size)
+
+        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {api_size} (mapped from {size}), orientation: {api_orientation} (mapped from {orientation}), model: {model}, has_image: {bool(image)}")
         async with aiohttp.ClientSession(headers=headers) as session:
 
             # ① 提交生成任务
@@ -57,13 +72,18 @@ class SoraClient:
                     # Add other fields
                     data.add_field('prompt', prompt)
                     data.add_field('model', model)
-                    data.add_field('duration', str(duration))
-                    data.add_field('size', size)
-                    data.add_field('orientation', orientation)
+                    # duration causes type error in multipart (string vs int), passing via query param or omitting from body
+                    # data.add_field('duration', str(duration)) 
+                    data.add_field('size', api_size)
+                    data.add_field('orientation', api_orientation)
                     
+                    # Pass duration as query param to handle int type correctly in Go backends
+                    params = {"duration": duration}
+
                     async with session.post(
                         SORA_STORYBOARD_URL,
                         data=data,
+                        params=params,
                         proxy=request_proxy
                     ) as resp:
                         if not resp.ok:
@@ -80,8 +100,8 @@ class SoraClient:
                         "model": model, # 使用传入的 model 参数
                         "prompt": prompt,
                         "duration": duration,
-                        "size": size,
-                        "orientation": orientation,
+                        "size": api_size,
+                        "orientation": api_orientation,
                         "watermark": False,
                         "private": True,
                         "images": []
