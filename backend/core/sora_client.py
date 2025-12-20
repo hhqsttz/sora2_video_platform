@@ -18,30 +18,11 @@ class SoraClient:
         }
 
     async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 5, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None, model: str = "sora-2-pro"):
-        # 智能判断：如果没有提供 Key 且配置了 Mock 模式，才使用 Mock
-        # 只要提供了 Key，就强制尝试真实调用
-        should_use_mock = USE_MOCK and not api_key
-        
-        # 兼容旧代码调用 (如果有人传了 resolution 参数，虽然现在签名改了，但为了安全起见...)
-        # 其实签名改了，旧的关键字参数调用会报错，所以这里假设调用方都已经更新了 (TaskManager 已更新)
-        
         # 优先使用用户传入的代理，否则使用全局配置的代理
         request_proxy = proxy if proxy else HTTP_PROXY
 
-        if should_use_mock:
-            logger.info(f"[Mock] Generating video for prompt: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}, has_image: {bool(image)}, model: {model}")
-            # Simulate duration based on requested duration
-            steps = 10
-            sleep_time = max(0.5, duration / steps)
-            for i in range(1, steps + 1):
-                await asyncio.sleep(sleep_time)
-                progress_cb(i * 10)
-                logger.debug(f"[Mock] Progress: {i * 10}%")
-            logger.info("[Mock] Video generation completed")
-            return b"fake_video_content_mp4_header..."
-
         if not api_key:
-             # 既没有 Key 也没开 Mock（或者 Mock 被上面逻辑跳过了但 Key 为空）
+             # Key 为空
              raise ValueError("API Key is required for real requests")
 
         # 使用前端传递的 API Key 构建 Authorization 头

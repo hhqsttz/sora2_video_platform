@@ -1,12 +1,12 @@
 import os
 
 # API Config
-SORA_API_KEY = os.getenv("SORA_API_KEY", "sk-proj-mock-key")
+SORA_API_KEY = os.getenv("SORA_API_KEY", "")
 # 替换为第三方中转 API 地址
 SORA_CREATE_URL = "https://yunwu.ai/v1/video/create"
 SORA_QUERY_URL = "https://yunwu.ai/v1/video/query"
 SORA_MODEL = "sora-2"
-USE_MOCK = True  # Enable mock mode for testing
+USE_MOCK = False  # Disable mock mode for production
 
 # Proxy Config (Optional)
 # 使用国内中转 API 时通常不需要代理，除非你的网络环境特殊
