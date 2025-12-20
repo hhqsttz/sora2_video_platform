@@ -57,16 +57,9 @@
         }
 
         .main-grid {
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 40px;
-            align-items: start;
-        }
-
-        @media (max-width: 900px) {
-            .main-grid {
-                grid-template-columns: 1fr;
-            }
+            display: flex;
+            flex-direction: column;
+            gap: 60px;
         }
 
         .card {
