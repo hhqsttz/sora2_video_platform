@@ -74,7 +74,7 @@ app.add_middleware(
 manager = TaskManager()
 
 class TaskRequest(BaseModel):
-    prompt: str
+    prompt: Optional[str] = ""
     api_key: Optional[str] = None
     duration: Optional[int] = 5
     model: Optional[Literal["sora-2-pro", "sora-2"]] = "sora-2"

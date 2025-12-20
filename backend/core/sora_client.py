@@ -3,10 +3,11 @@ import asyncio
 import logging
 import sys
 import os
+import base64
 
 # Add parent directory to path to allow importing config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import SORA_CREATE_URL, SORA_QUERY_URL, USE_MOCK, SORA_MODEL, HTTP_PROXY
+from config import SORA_CREATE_URL, SORA_QUERY_URL, SORA_STORYBOARD_URL, USE_MOCK, SORA_MODEL, HTTP_PROXY
 
 logger = logging.getLogger(__name__)
 
@@ -29,35 +30,77 @@ class SoraClient:
         headers = self.default_headers.copy()
         headers["Authorization"] = f"Bearer {api_key}"
 
-        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}, model: {model}")
+        # 如果有图片，使用 Multipart/Form-Data，移除默认的 Content-Type
+        if image and "Content-Type" in headers:
+            del headers["Content-Type"]
+
+        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {size}, orientation: {orientation}, model: {model}, has_image: {bool(image)}")
         async with aiohttp.ClientSession(headers=headers) as session:
 
             # ① 提交生成任务
             try:
-                payload = {
-                    "model": model, # 使用传入的 model 参数
-                    "prompt": prompt,
-                    "duration": duration,
-                    "size": size,
-                    "orientation": orientation,
-                    "watermark": False,
-                    "private": True,
-                    "images": [image] if image else []
-                }
-
-                async with session.post(
-                    SORA_CREATE_URL,
-                    json=payload,
-                    proxy=request_proxy
-                ) as resp:
-                    if not resp.ok:
-                        error_text = await resp.text()
-                        logger.error(f"Sora API error: {resp.status} - {error_text}")
-                        resp.raise_for_status()
+                if image:
+                    # Storyboard mode (Multipart)
+                    logger.info("Using Storyboard mode with image upload")
                     
-                    data = await resp.json()
-                    task_id = data["id"]
-                    logger.info(f"Sora task submitted, ID: {task_id}")
+                    # Handle Base64 image
+                    if "," in image:
+                        header, encoded = image.split(",", 1)
+                    else:
+                        encoded = image
+                    image_bytes = base64.b64decode(encoded)
+                    
+                    data = aiohttp.FormData()
+                    # Field name based on user request
+                    data.add_field('input_reference', image_bytes, filename='storyboard.jpg', content_type='image/jpeg')
+                    
+                    # Add other fields
+                    data.add_field('prompt', prompt)
+                    data.add_field('model', model)
+                    data.add_field('duration', str(duration))
+                    data.add_field('size', size)
+                    data.add_field('orientation', orientation)
+                    
+                    async with session.post(
+                        SORA_STORYBOARD_URL,
+                        data=data,
+                        proxy=request_proxy
+                    ) as resp:
+                        if not resp.ok:
+                            error_text = await resp.text()
+                            logger.error(f"Sora Storyboard API error: {resp.status} - {error_text}")
+                            resp.raise_for_status()
+                        
+                        data = await resp.json()
+                        task_id = data["id"]
+                        logger.info(f"Sora Storyboard task submitted, ID: {task_id}")
+                else:
+                    # Standard mode (JSON)
+                    payload = {
+                        "model": model, # 使用传入的 model 参数
+                        "prompt": prompt,
+                        "duration": duration,
+                        "size": size,
+                        "orientation": orientation,
+                        "watermark": False,
+                        "private": True,
+                        "images": []
+                    }
+
+                    async with session.post(
+                        SORA_CREATE_URL,
+                        json=payload,
+                        proxy=request_proxy
+                    ) as resp:
+                        if not resp.ok:
+                            error_text = await resp.text()
+                            logger.error(f"Sora API error: {resp.status} - {error_text}")
+                            resp.raise_for_status()
+                        
+                        data = await resp.json()
+                        task_id = data["id"]
+                        logger.info(f"Sora task submitted, ID: {task_id}")
+
             except Exception as e:
                 logger.error(f"Failed to submit task: {e}")
                 raise
