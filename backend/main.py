@@ -82,6 +82,7 @@ class TaskRequest(BaseModel):
     orientation: Optional[Literal["landscape", "portrait", "square"]] = "landscape"
     image: Optional[str] = None  # Base64 string
     proxy: Optional[str] = None  # User provided proxy URL
+    mode: Optional[str] = "studio" # "studio" or "storyboard"
 
 @app.post("/tasks")
 async def create_task(req: TaskRequest):
@@ -90,11 +91,11 @@ async def create_task(req: TaskRequest):
     if req.image and len(req.image) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image payload too large (max ~10MB raw)")
 
-    logger.info(f"Received new task request with prompt: {req.prompt}, duration: {req.duration}, model: {req.model}, size: {req.size}, orientation: {req.orientation}, has_image: {bool(req.image)}, proxy: {req.proxy}")
+    logger.info(f"Received new task request with prompt: {req.prompt}, duration: {req.duration}, model: {req.model}, size: {req.size}, orientation: {req.orientation}, has_image: {bool(req.image)}, proxy: {req.proxy}, mode: {req.mode}")
     # 注意：VideoTask 类也需要相应更新，或者我们在这里做一个简单的转换
     # 为了最小化修改，我们暂时将 size 和 orientation 组合成 resolution 字符串传递给 VideoTask，或者修改 VideoTask
     # 这里选择修改 VideoTask 更清晰
-    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy, req.model)
+    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy, req.model, req.mode)
     add_task(task)
     asyncio.create_task(manager.run_task(task))
     logger.info(f"Task created with ID: {task.id}")

@@ -18,7 +18,7 @@ class SoraClient:
             "Accept": "application/json"
         }
 
-    async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 5, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None, model: str = "sora-2-pro"):
+    async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 5, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None, model: str = "sora-2-pro", mode: str = "studio"):
         # 优先使用用户传入的代理，否则使用全局配置的代理
         request_proxy = proxy if proxy else HTTP_PROXY
 
@@ -30,8 +30,8 @@ class SoraClient:
         headers = self.default_headers.copy()
         headers["Authorization"] = f"Bearer {api_key}"
 
-        # 如果有图片，使用 Multipart/Form-Data，移除默认的 Content-Type
-        if image and "Content-Type" in headers:
+        # 如果是 Storyboard 模式且有图片，使用 Multipart/Form-Data，移除默认的 Content-Type
+        if mode == 'storyboard' and image and "Content-Type" in headers:
             del headers["Content-Type"]
 
         # Map friendly names to API values
@@ -39,36 +39,40 @@ class SoraClient:
         api_orientation = orientation
         api_size = size
 
-        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {api_size}, orientation: {api_orientation}, model: {model}, has_image: {bool(image)}")
+        logger.info(f"Sending generation request to Sora ({mode}): {prompt}, duration: {duration}s, size: {api_size}, orientation: {api_orientation}, model: {model}, has_image: {bool(image)}")
         async with aiohttp.ClientSession(headers=headers) as session:
 
             # ① 提交生成任务
             try:
-                if image:
+                if mode == 'storyboard':
                     # Storyboard mode (Multipart)
-                    logger.info("Using Storyboard mode with image upload")
-                    
-                    # Handle Base64 image
-                    if "," in image:
-                        header, encoded = image.split(",", 1)
-                    else:
-                        encoded = image
-                    image_bytes = base64.b64decode(encoded)
+                    logger.info("Using Storyboard mode (Multipart)")
                     
                     data = aiohttp.FormData()
-                    # Field name based on user request
-                    data.add_field('input_reference', image_bytes, filename='storyboard.jpg', content_type='image/jpeg')
+                    
+                    if image:
+                        # Handle Base64 image
+                        if "," in image:
+                            header, encoded = image.split(",", 1)
+                        else:
+                            encoded = image
+                        image_bytes = base64.b64decode(encoded)
+                        # Field name based on user request
+                        data.add_field('input_reference', image_bytes, filename='storyboard.jpg', content_type='image/jpeg')
                     
                     # Add other fields
                     data.add_field('prompt', prompt)
                     data.add_field('model', model)
-                    data.add_field('duration', str(duration))
                     data.add_field('size', api_size)
                     data.add_field('orientation', api_orientation)
                     
+                    # Pass duration as query param to avoid "cannot unmarshal string into Go struct field ... of type int" error
+                    params = {"duration": duration}
+
                     async with session.post(
                         SORA_STORYBOARD_URL,
                         data=data,
+                        params=params,
                         proxy=request_proxy
                     ) as resp:
                         if not resp.ok:
@@ -80,16 +84,28 @@ class SoraClient:
                         task_id = data["id"]
                         logger.info(f"Sora Storyboard task submitted, ID: {task_id}")
                 else:
-                    # Standard mode (JSON)
+                    # Standard mode / Creation Center (JSON)
+                    logger.info("Using Studio mode (JSON)")
+                    
+                    # Prepare images list if image is present
+                    images_list = []
+                    if image:
+                        # Remove header if present (e.g. "data:image/jpeg;base64,")
+                        if "," in image:
+                            _, encoded = image.split(",", 1)
+                            images_list.append(encoded)
+                        else:
+                            images_list.append(image)
+
                     payload = {
                         "model": model, # 使用传入的 model 参数
                         "prompt": prompt,
-                        "duration": duration,
+                        "duration": int(duration), # Force int
                         "size": api_size,
                         "orientation": api_orientation,
                         "watermark": False,
                         "private": True,
-                        "images": []
+                        "images": images_list
                     }
 
                     async with session.post(

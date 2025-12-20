@@ -9,10 +9,10 @@ venv/
 .env
 
 # PyInstaller / Packaging
-# build_artifacts/
-# build/
-# dist/
-# *.spec
+build_artifacts/
+build/
+dist/
+*.spec
 
 
 
