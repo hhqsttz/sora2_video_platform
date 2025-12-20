@@ -855,17 +855,23 @@
                 const idStr = card.id.replace('scene-', '');
                 const prompt = document.getElementById(`scene-prompt-${idStr}`).value.trim();
                 const duration = parseInt(document.getElementById(`scene-duration-${idStr}`).value);
-                const imageInput = document.getElementById(`scene-image-${idStr}`);
+                const imageInput = document.getElementById(`scene-img-${idStr}`);
                 
                 // Construct pseudo-prompt to indicate scene number if backend supported metadata
                 const finalPrompt = `[Scene ${idStr}] ${prompt}`; 
 
                 const quality = document.getElementById(`scene-quality-${idStr}`).value;
-                let size = "1080p";
-                let orientation = "16:9";
+                let size = "large";
+                let orientation = "landscape";
                 
                 if (quality && quality.includes('_')) {
-                    [size, orientation] = quality.split('_');
+                    const [rawSize, rawOrientation] = quality.split('_');
+                    
+                    if (rawSize === '1080p') size = 'large';
+                    else if (rawSize === '720p') size = 'medium';
+                    
+                    if (rawOrientation === '16:9') orientation = 'landscape';
+                    else if (rawOrientation === '9:16') orientation = 'portrait';
                 }
 
                 try {

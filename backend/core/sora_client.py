@@ -35,21 +35,11 @@ class SoraClient:
             del headers["Content-Type"]
 
         # Map friendly names to API values
-        orientation_map = {
-            "landscape": "16:9",
-            "portrait": "9:16",
-            "square": "1:1"
-        }
-        api_orientation = orientation_map.get(orientation, orientation)
+        # API expects "large", "medium", "landscape", "portrait" etc. directly
+        api_orientation = orientation
+        api_size = size
 
-        size_map = {
-            "large": "1080p",
-            "medium": "720p",
-            "small": "480p"
-        }
-        api_size = size_map.get(size, size)
-
-        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {api_size} (mapped from {size}), orientation: {api_orientation} (mapped from {orientation}), model: {model}, has_image: {bool(image)}")
+        logger.info(f"Sending generation request to Sora: {prompt}, duration: {duration}s, size: {api_size}, orientation: {api_orientation}, model: {model}, has_image: {bool(image)}")
         async with aiohttp.ClientSession(headers=headers) as session:
 
             # ① 提交生成任务
@@ -72,18 +62,13 @@ class SoraClient:
                     # Add other fields
                     data.add_field('prompt', prompt)
                     data.add_field('model', model)
-                    # duration causes type error in multipart (string vs int), passing via query param or omitting from body
-                    # data.add_field('duration', str(duration)) 
+                    data.add_field('duration', str(duration))
                     data.add_field('size', api_size)
                     data.add_field('orientation', api_orientation)
                     
-                    # Pass duration as query param to handle int type correctly in Go backends
-                    params = {"duration": duration}
-
                     async with session.post(
                         SORA_STORYBOARD_URL,
                         data=data,
-                        params=params,
                         proxy=request_proxy
                     ) as resp:
                         if not resp.ok:
@@ -146,9 +131,12 @@ class SoraClient:
                 state = status_data["status"]
                 logger.info(f"Task {task_id} status: {state}")
 
-                if state == "processing" or state == "pending":
-                    # 简单模拟进度增加
-                    if state == "pending" and "detail" in status_data and "pending_info" in status_data["detail"]:
+                if state == "processing" or state == "pending" or state == "queued":
+                    # 优先使用 API 返回的进度
+                    if "progress" in status_data:
+                        local_progress = status_data["progress"]
+                    # 其次尝试从 detail 中获取
+                    elif (state == "pending" or state == "queued") and "detail" in status_data and "pending_info" in status_data["detail"]:
                          # 尝试获取真实进度
                          try:
                              real_progress = status_data["detail"]["pending_info"].get("progress_pct", 0)
