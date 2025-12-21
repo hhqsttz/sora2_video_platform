@@ -14,34 +14,53 @@ class TaskManager:
         async with self.sem:
             task.status = TaskStatus.RUNNING
             save_tasks() # Save status change
-            try:
-                def progress_cb(p):
-                    task.progress = p
-                    # Optional: save_tasks() on progress? Might be too frequent.
-                    # Let's just save on major status changes.
-
-                data = await self.client.generate_video(
-                    prompt=task.prompt, 
-                    progress_cb=progress_cb, 
-                    api_key=task.api_key,
-                    duration=task.duration,
-                    size=task.size,
-                    orientation=task.orientation,
-                    image=task.image,
-                    proxy=task.proxy,
-                    model=task.model,
-                    mode=task.mode,
-                    character_url=task.character_url,
-                    character_timestamps=task.character_timestamps
-                )
-                task.result_path = save_video(task.id, data)
-                task.status = TaskStatus.DONE
-                save_tasks() # Save completion
-            except Exception as e:
-                task.retry += 1
-                if task.retry <= MAX_RETRY:
-                    await self.run_task(task)
-                else:
-                    task.status = TaskStatus.FAILED
-                    task.error = str(e)
-                    save_tasks() # Save failure
+            
+            # Reset retry count if needed, or assume it starts at 0
+            # task.retry is managed in the loop or persisted
+            
+            while True:
+                try:
+                    def progress_cb(p):
+                        task.progress = p
+                    
+                    data = await self.client.generate_video(
+                        prompt=task.prompt, 
+                        progress_cb=progress_cb, 
+                        api_key=task.api_key,
+                        duration=task.duration,
+                        size=task.size,
+                        orientation=task.orientation,
+                        image=task.image,
+                        proxy=task.proxy,
+                        model=task.model,
+                        mode=task.mode,
+                        character_url=task.character_url,
+                        character_timestamps=task.character_timestamps,
+                        scenes=task.scenes
+                    )
+                    task.result_path = save_video(task.id, data)
+                    task.status = TaskStatus.DONE
+                    save_tasks() # Save completion
+                    break # Success, exit loop
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Task {task.id} failed (attempt {task.retry + 1}/{MAX_RETRY + 1}): {e}")
+                    
+                    task.retry += 1
+                    if task.retry <= MAX_RETRY:
+                        # Wait a bit before retrying
+                        # If error is quota related or rate limit, wait longer
+                        wait_time = 10
+                        error_str = str(e).lower()
+                        if "quota" in error_str or "limit" in error_str or "429" in error_str or "saturated" in error_str or "busy" in error_str:
+                            wait_time = 30
+                            logger.info(f"Rate limit/Quota error detected, waiting {wait_time}s...")
+                        
+                        await asyncio.sleep(wait_time)
+                        continue # Retry
+                    else:
+                        task.status = TaskStatus.FAILED
+                        task.error = str(e)
+                        save_tasks() # Save failure
+                        break # Give up

@@ -7,7 +7,7 @@ import base64
 
 # Add parent directory to path to allow importing config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import SORA_CREATE_URL, SORA_QUERY_URL, SORA_STORYBOARD_URL, SORA_CHARACTERS_URL, USE_MOCK, SORA_MODEL, HTTP_PROXY
+from config import SORA_CREATE_URL, SORA_QUERY_URL, SORA_STORYBOARD_CREATE_URL, SORA_STORYBOARD_STATUS_URL, SORA_CHARACTERS_URL, USE_MOCK, SORA_MODEL, HTTP_PROXY
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,33 @@ class SoraClient:
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
+
+    def _clean_url(self, url: str) -> str:
+        if not url:
+            return ""
+        import re
+        raw = str(url)
+        raw = raw.replace("`", "").replace("，", ",")
+        match = re.search(r"https?://[^\s'\"`<>，,]+", raw)
+        cleaned = match.group(0) if match else raw.strip()
+        cleaned = cleaned.strip().strip('"').strip("'").strip()
+        cleaned = cleaned.split(",", 1)[0].strip()
+        while cleaned and cleaned[-1] in [",", ";", ")", "]", "}", ">", "'", '"', "`"]:
+            cleaned = cleaned[:-1].strip()
+        return cleaned
+
+    def _compute_resolution_size(self, size: str, orientation: str, model: str = None) -> str:
+        import re
+        if isinstance(size, str) and re.match(r"^\d{3,4}x\d{3,4}$", size.strip()):
+            return size.strip()
+        normalized_model = (model or "").strip().lower()
+        if size == "small" or normalized_model == "sora-2":
+            if orientation == "portrait":
+                return "720x1280"
+            return "1280x720"
+        if orientation == "portrait":
+            return "1080x1920"
+        return "1920x1080"
 
     def _parse_timestamps(self, timestamps):
         if not timestamps:
@@ -34,52 +61,75 @@ class SoraClient:
             logger.warning(f"Failed to parse timestamps '{timestamps}': {e}")
             return timestamps
 
-    async def generate_video(self, prompt, progress_cb, api_key=None, duration=10, size="large", orientation="landscape", image=None, proxy=None, model="sora-2", mode="studio", character_url=None, character_timestamps=None):
+    async def generate_video(self, prompt, progress_cb, api_key=None, duration=10, size="large", orientation="landscape", image=None, proxy=None, model="sora-2", mode="studio", character_url=None, character_timestamps=None, scenes=None):
         # 优先使用用户传入的代理，否则使用全局配置的代理
         request_proxy = proxy if proxy else HTTP_PROXY
 
+        if mode == 'storyboard' and scenes:
+            constructed_prompt = ""
+            shot_index = 1
+            for scene in scenes:
+                # Handle both object (Pydantic) and dict (JSON)
+                s_duration = getattr(scene, 'duration', None)
+                if s_duration is None and isinstance(scene, dict):
+                    s_duration = scene.get('duration')
+                
+                s_prompt = getattr(scene, 'prompt', None)
+                if s_prompt is None and isinstance(scene, dict):
+                    s_prompt = scene.get('prompt')
+                    
+                constructed_prompt += f"Shot {shot_index}:\nduration: {s_duration}sec\nScene: {s_prompt or 'Continue previous action'}\n\n"
+                shot_index += 1
+            
+            if constructed_prompt:
+                prompt = constructed_prompt.strip()
+                logger.info(f"Constructed storyboard prompt from scenes: {prompt}")
+            else:
+                logger.warning("Storyboard mode but no scenes provided or constructed prompt is empty.")
+
+        if not prompt and not image:
+            # 如果既没有 prompt 也没有图片，对于某些模型可能是允许的（纯图片生成？），但通常需要至少一个
+            logger.warning("Prompt is empty and no image provided.")
+            
         if not api_key:
              # Key 为空
              raise ValueError("API Key is required for real requests")
 
-        # 使用前端传递的 API Key 构建 Authorization 头
-        headers = self.default_headers.copy()
+        # 如果是 Storyboard 模式，我们不应该在 Session 级别设置 Content-Type
+        # 因为 Multipart 需要自动生成的 Boundary
+        session_headers = self.default_headers.copy()
+        if mode == 'storyboard':
+            if "Content-Type" in session_headers:
+                del session_headers["Content-Type"]
+            
+        headers = session_headers.copy()
         headers["Authorization"] = f"Bearer {api_key}"
-
-        # 如果是 Storyboard 模式且有图片，使用 Multipart/Form-Data，移除默认的 Content-Type
-        if mode == 'storyboard' and image and "Content-Type" in headers:
-            del headers["Content-Type"]
 
         # Map friendly names to API values
         # API expects specific resolution strings (e.g. "1920x1080") instead of "large"/"medium"
         api_orientation = orientation
-        
+
+        storyboard_ratio_size = "9x16" if orientation == "portrait" else "16x9"
+
+        storyboard_create_url = ""
+        storyboard_status_url = ""
         if mode == 'storyboard':
-            # Storyboard mode: size is aspect ratio string (e.g. "16x9"), ignores specific resolution
-            if orientation == "portrait":
-                api_size = "9x16"
-            else: # landscape
-                api_size = "16x9"
+            storyboard_create_url = self._clean_url(SORA_STORYBOARD_CREATE_URL)
+            storyboard_status_url = self._clean_url(SORA_STORYBOARD_STATUS_URL)
+
+        if mode == 'storyboard':
+            # Storyboard mode logic for size
+            # sora-2 usually expects resolution (e.g. 1280x720), not ratio (16x9)
+            # We prioritize resolution for sora-2 to avoid 400 invalid_size
+            resolution_size = self._compute_resolution_size(size, orientation, model=model)
+            if model == "sora-2":
+                api_size = resolution_size
+            else:
+                # For other models (e.g. sora-2-pro might support ratio?), we can keep ratio or fallback
+                # safely default to resolution to be sure
+                api_size = resolution_size
         else:
-            # Studio mode: Calculate resolution based on size and orientation
-            # Supported sizes: large (1080p), small (720p)
-            # Supported orientations: landscape (16:9), portrait (9:16)
-            if size == "large":
-                if orientation == "portrait":
-                    api_size = "1080x1920"
-                else: # landscape (default)
-                    api_size = "1920x1080"
-            elif size == "small": # re-purposing small as 720p
-                if orientation == "portrait":
-                    api_size = "720x1280"
-                else: # landscape
-                    api_size = "1280x720"
-            else: # default/fallback to large landscape
-                api_size = "1920x1080"
-            
-            # Fallback if size is already in resolution format (e.g. passed directly)
-            if "x" in size and size not in ["large", "medium", "small"]:
-                 api_size = size
+            api_size = self._compute_resolution_size(size, orientation, model=model)
  
         logger.info(f"Sending generation request to Sora ({mode}): {prompt}, duration: {duration}s, size: {api_size}, orientation: {api_orientation}, model: {model}, has_image: {bool(image)}")
         async with aiohttp.ClientSession(headers=headers) as session:
@@ -87,41 +137,293 @@ class SoraClient:
             # ① 提交生成任务
             try:
                 if mode == 'storyboard':
-                    # Storyboard mode (Multipart)
-                    logger.info("Using Storyboard mode (Multipart)")
-                    
-                    data = aiohttp.FormData()
-                    
-                    if image:
-                        # Handle Base64 image
-                        if "," in image:
-                            header, encoded = image.split(",", 1)
+                    fallback_create_url = ""
+
+                    try:
+                        d_val = float(duration)
+                        if d_val.is_integer():
+                            d_str = str(int(d_val))
                         else:
-                            encoded = image
-                        image_bytes = base64.b64decode(encoded)
-                        # Field name based on user request
-                        data.add_field('input_reference', image_bytes, filename='storyboard.jpg', content_type='image/jpeg')
-                    
-                    # Add other fields
-                    data.add_field('prompt', prompt)
-                    data.add_field('model', model)
-                    data.add_field('size', api_size)
-                    data.add_field('seconds', str(duration))
-                    data.add_field('watermark', 'false')
-                    data.add_field('private', 'false')
-                    async with session.post(
-                        SORA_STORYBOARD_URL,
-                        data=data,
-                        proxy=request_proxy
-                    ) as resp:
-                        if not resp.ok:
-                            error_text = await resp.text()
-                            logger.error(f"Sora Storyboard API error: {resp.status} - {error_text}")
-                            resp.raise_for_status()
+                            d_str = str(d_val)
+                    except:
+                        d_str = str(duration)
+
+                    async def submit_storyboard_json(target_url: str, size_value, model_value: str):
+                        cleaned_url = self._clean_url(target_url)
+                        payload = {
+                            "model": model_value,
+                            "prompt": prompt,
+                            "seconds": d_str,
+                            "watermark": False,
+                            "private": False
+                        }
+                        if size_value is not None:
+                            payload["size"] = size_value
+
+                        if image:
+                            # 接口定义 input_reference 为 string
+                            img_str = image
+                            if "," in image:
+                                _, img_str = image.split(",", 1)
+                            payload["input_reference"] = img_str
+
+                        logger.info(
+                            "Storyboard submit (json): url=%s, model=%s, seconds=%s, size=%s, private=%s, watermark_type=%s, prompt_len=%s",
+                            cleaned_url,
+                            payload.get("model"),
+                            payload.get("seconds"),
+                            payload.get("size"),
+                            payload.get("private"),
+                            type(payload.get("watermark")).__name__,
+                            len(payload.get("prompt") or "")
+                        )
+                        async with session.post(cleaned_url, json=payload, proxy=request_proxy) as resp:
+                            if not resp.ok:
+                                error_text = await resp.text()
+                                logger.error(f"Sora Storyboard API error: {resp.status} - {error_text}")
+                                raise RuntimeError(error_text)
+                            return await resp.json()
+
+                    async def submit_storyboard_multipart(target_url: str, size_value, model_value: str):
+                        cleaned_url = self._clean_url(target_url)
                         
-                        data = await resp.json()
-                        task_id = data["id"]
-                        logger.info(f"Sora Storyboard task submitted, ID: {task_id}")
+                        # Manual multipart construction to match example exactly
+                        import uuid
+                        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+                        body_parts = []
+                        
+                        def add_field(name, value):
+                            body_parts.append(f'--{boundary}'.encode('utf-8'))
+                            body_parts.append(f'Content-Disposition: form-data; name="{name}"'.encode('utf-8'))
+                            body_parts.append(b'Content-Type: text/plain')
+                            body_parts.append(b'')
+                            body_parts.append(str(value).encode('utf-8'))
+
+                        # 1. model
+                        add_field('model', model_value)
+                        
+                        # 2. prompt
+                        add_field('prompt', prompt)
+                        
+                        # 3. seconds
+                        add_field('seconds', d_str)
+                        
+                        # 4. input_reference (File)
+                        if image:
+                            if "," in image:
+                                _, encoded = image.split(",", 1)
+                            else:
+                                encoded = image
+                            image_bytes = base64.b64decode(encoded)
+                            
+                            body_parts.append(f'--{boundary}'.encode('utf-8'))
+                            body_parts.append(f'Content-Disposition: form-data; name="input_reference"; filename="storyboard.jpg"'.encode('utf-8'))
+                            body_parts.append(b'Content-Type: image/jpeg')
+                            body_parts.append(b'')
+                            body_parts.append(image_bytes)
+                        
+                        # 5. size
+                        if size_value:
+                            add_field('size', size_value)
+                            
+                        # 6. watermark
+                        add_field('watermark', 'false')
+                        
+                        # 7. private
+                        add_field('private', 'false')
+                        
+                        # 8. Empty fields
+                        add_field('character_url', '')
+                        add_field('character_timestamps', '')
+                        add_field('metadata', '')
+                        add_field('character_from_task', '')
+                        add_field('character_create', '')
+                        
+                        # End boundary
+                        body_parts.append(f'--{boundary}--'.encode('utf-8'))
+                        body_parts.append(b'')
+                        
+                        # Join all parts
+                        body_bytes = b'\r\n'.join(body_parts)
+                        
+                        # Headers
+                        post_headers = headers.copy()
+                        post_headers['Content-Type'] = f'multipart/form-data; boundary={boundary}'
+                        post_headers['Content-Length'] = str(len(body_bytes))
+
+                        logger.info(
+                            "Storyboard submit (manual multipart): url=%s, model=%s, seconds=%s, size=%s, private=%s, has_image=%s, prompt_len=%s",
+                            cleaned_url,
+                            model_value,
+                            d_str,
+                            size_value,
+                            False,
+                            bool(image),
+                            len(prompt or "")
+                        )
+                        
+                        async with session.post(cleaned_url, data=body_bytes, headers=post_headers, proxy=request_proxy) as resp:
+                            if not resp.ok:
+                                error_text = await resp.text()
+                                logger.error(f"Sora Storyboard API error: {resp.status} - {error_text}")
+                                raise RuntimeError(error_text)
+                            return await resp.json()
+
+                    logger.info("Using Storyboard mode")
+
+                    submit_response = None
+                    submit_exception = None
+
+                    def classify_storyboard_submit_error(exc: Exception) -> str:
+                        text = str(exc) if exc else ""
+                        lowered = text.lower()
+                        if "missing_model" in lowered:
+                            return "missing_model"
+                        if "invalid_size" in lowered:
+                            return "invalid_size"
+                        if "invalid_url" in lowered:
+                            return "invalid_url"
+                        if "get_channel_failed" in lowered:
+                            return "upstream_busy"
+                        return "unknown"
+
+                    logger.info(
+                        "Storyboard upstream endpoints: create=%r status=%r",
+                        storyboard_create_url,
+                        storyboard_status_url
+                    )
+
+                    ratio_size_value = storyboard_ratio_size
+                    resolution_size_value = self._compute_resolution_size(size, orientation, model=model)
+                    size_candidates = []
+                    
+                    # For sora-2, we skip ratio size because it causes 400 error
+                    if model == "sora-2":
+                        size_candidates.append(resolution_size_value)
+                        # Add ratio size only as a fallback if resolution fails (though unlikely to help for sora-2)
+                        # size_candidates.append(ratio_size_value) 
+                    else:
+                        # For other models, try ratio first, then resolution
+                        size_candidates.append(ratio_size_value)
+                        size_candidates.append(resolution_size_value)
+                        
+                    if None not in size_candidates:
+                        size_candidates.append(None)
+
+                    model_candidates = [model]
+                    # if isinstance(model, str) and model.strip() == "sora-2":
+                    #     model_candidates.append("sora-2-pro")
+
+                    # 强制使用 Multipart 提交，因为它的格式最标准，且支持空字段
+                    if True: 
+                        for model_value in model_candidates:
+                            for size_value in size_candidates:
+                                try:
+                                    submit_response = await submit_storyboard_multipart(storyboard_create_url, size_value=size_value, model_value=model_value)
+                                    submit_exception = None
+                                    break
+                                except Exception as e:
+                                    submit_exception = e
+                                    submit_response = None
+                                    code = classify_storyboard_submit_error(e)
+                                    if code == "upstream_busy":
+                                        await asyncio.sleep(2)
+                                        try:
+                                            submit_response = await submit_storyboard_multipart(storyboard_create_url, size_value=size_value, model_value=model_value)
+                                            submit_exception = None
+                                            break
+                                        except Exception as e2:
+                                            submit_exception = e2
+                                            submit_response = None
+                                            code = classify_storyboard_submit_error(e2)
+                                    if code == "missing_model":
+                                        break
+                                    if code != "invalid_size":
+                                        break
+                            if submit_response is not None:
+                                break
+                        if submit_response is None:
+                            logger.warning(
+                                "Storyboard multipart submit failed, will try json. url=%s, error=%s",
+                                self._clean_url(storyboard_create_url),
+                                str(submit_exception)
+                            )
+
+                    # 如果 Multipart 失败，才尝试 JSON
+                    if submit_response is None:
+                        for model_value in model_candidates:
+                            for size_value in size_candidates:
+                                try:
+                                    submit_response = await submit_storyboard_json(storyboard_create_url, size_value, model_value=model_value)
+                                    submit_exception = None
+                                    break
+                                except Exception as e:
+                                    submit_exception = e
+                                    submit_response = None
+                                    code = classify_storyboard_submit_error(e)
+                                    if code == "upstream_busy":
+                                        await asyncio.sleep(2)
+                                        try:
+                                            submit_response = await submit_storyboard_json(storyboard_create_url, size_value, model_value=model_value)
+                                            submit_exception = None
+                                            break
+                                        except Exception as e2:
+                                            submit_exception = e2
+                                            submit_response = None
+                                            code = classify_storyboard_submit_error(e2)
+                                    if code != "invalid_size":
+                                        break
+                            if submit_response is not None:
+                                break
+                        if submit_response is None:
+                            logger.warning(
+                                "Storyboard json submit failed. url=%s, error=%s",
+                                self._clean_url(storyboard_create_url),
+                                str(submit_exception)
+                            )
+
+                    if submit_response is None and fallback_create_url and fallback_create_url != storyboard_create_url:
+                        if image:
+                            try:
+                                submit_response = await submit_storyboard_multipart(fallback_create_url, size_value=api_size)
+                                submit_exception = None
+                            except Exception as e:
+                                submit_exception = e
+                                submit_response = None
+                                if submit_response is None:
+                                    logger.warning(
+                                        "Storyboard multipart fallback submit failed, will try json. url=%s, error=%s",
+                                        self._clean_url(fallback_create_url),
+                                        str(submit_exception)
+                                    )
+
+                        if submit_response is None:
+                            try:
+                                submit_response = await submit_storyboard_json(fallback_create_url, api_size)
+                                submit_exception = None
+                            except Exception as e:
+                                submit_exception = e
+                                submit_response = None
+                                if submit_response is None:
+                                    logger.warning(
+                                        "Storyboard json fallback submit failed. url=%s, error=%s",
+                                        self._clean_url(fallback_create_url),
+                                        str(submit_exception)
+                                    )
+
+                    if submit_response is None:
+                        raise submit_exception if submit_exception else RuntimeError("Storyboard submit failed")
+
+                    task_id = None
+                    if isinstance(submit_response, dict):
+                        if "id" in submit_response:
+                            task_id = submit_response.get("id")
+                        elif "data" in submit_response and isinstance(submit_response["data"], dict):
+                            task_id = submit_response["data"].get("id")
+                    if not task_id:
+                        raise RuntimeError(f"Storyboard submit response missing id: {submit_response}")
+
+                    logger.info(f"Sora Storyboard task submitted, ID: {task_id}")
                 else:
                     # Standard mode / Creation Center (JSON)
                     logger.info("Using Studio mode (JSON)")
@@ -154,7 +456,7 @@ class SoraClient:
                         }
 
                     async with session.post(
-                        SORA_CREATE_URL,
+                        self._clean_url(SORA_CREATE_URL),
                         json=payload,
                         proxy=request_proxy
                     ) as resp:
@@ -182,14 +484,35 @@ class SoraClient:
                 await asyncio.sleep(2)
 
                 try:
-                    async with session.get(SORA_QUERY_URL, params={"id": task_id}, proxy=request_proxy) as resp:
-                        resp.raise_for_status()
-                        status_data = await resp.json()
+                    if mode == 'storyboard':
+                         # Storyboard polling: GET /v1/videos/{id}
+                         poll_url = f"{storyboard_status_url}/{task_id}"
+                         async with session.get(poll_url, proxy=request_proxy) as resp:
+                            resp.raise_for_status()
+                            status_data = await resp.json()
+                            
+                            # Handle potential structure differences
+                            if "status" in status_data:
+                                state = status_data["status"]
+                            elif "data" in status_data and status_data["data"] and "status" in status_data["data"]:
+                                # Flatten data if wrapped
+                                status_data = status_data["data"]
+                                state = status_data["status"]
+                            else:
+                                logger.warning(f"Unknown storyboard status structure: {status_data}")
+                                # Try to guess or default
+                                state = "queued"
+                    else:
+                        # Studio polling: GET /v1/video/query?id={id}
+                        async with session.get(self._clean_url(SORA_QUERY_URL), params={"id": task_id}, proxy=request_proxy) as resp:
+                            resp.raise_for_status()
+                            status_data = await resp.json()
+                            state = status_data["status"]
+                            
                 except Exception as e:
                     logger.error(f"Failed to poll status: {e}")
                     raise
 
-                state = status_data["status"]
                 logger.info(f"Task {task_id} status: {state}")
 
                 if state == "processing" or state == "pending" or state == "queued":

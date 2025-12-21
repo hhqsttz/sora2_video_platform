@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 import shutil
 
 from core.task import VideoTask
@@ -53,8 +53,15 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 # 挂载前端静态资源 css 和 js
-app.mount("/css", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "css")), name="css")
-app.mount("/js", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "js")), name="js")
+# 检查是否在打包环境中
+if getattr(sys, 'frozen', False):
+    bundle_dir = sys._MEIPASS
+    frontend_dir = os.path.join(bundle_dir, "frontend")
+else:
+    frontend_dir = os.path.join(BASE_DIR, "frontend")
+
+app.mount("/css", StaticFiles(directory=os.path.join(frontend_dir, "css")), name="css")
+app.mount("/js", StaticFiles(directory=os.path.join(frontend_dir, "js")), name="js")
 
 # 挂载前端静态资源（如果有 css/js 文件夹），这里简单起见，直接映射根路由到 index.html
 @app.get("/")
@@ -82,6 +89,10 @@ app.add_middleware(
 
 manager = TaskManager()
 
+class Scene(BaseModel):
+    duration: float
+    prompt: str
+
 class TaskRequest(BaseModel):
     prompt: Optional[str] = ""
     api_key: Optional[str] = None
@@ -94,6 +105,7 @@ class TaskRequest(BaseModel):
     mode: Optional[str] = "studio" # "studio" or "storyboard"
     character_url: Optional[str] = None
     character_timestamps: Optional[str] = None
+    scenes: Optional[List[Scene]] = None
 
 class CharacterRequest(BaseModel):
     timestamps: str
@@ -199,7 +211,7 @@ async def create_task(req: TaskRequest):
     # 注意：VideoTask 类也需要相应更新，或者我们在这里做一个简单的转换
     # 为了最小化修改，我们暂时将 size 和 orientation 组合成 resolution 字符串传递给 VideoTask，或者修改 VideoTask
     # 这里选择修改 VideoTask 更清晰
-    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy, req.model, req.mode, req.character_url, req.character_timestamps)
+    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy, req.model, req.mode, req.character_url, req.character_timestamps, req.scenes)
     add_task(task)
     asyncio.create_task(manager.run_task(task))
     logger.info(f"Task created with ID: {task.id}")
@@ -244,15 +256,18 @@ if __name__ == "__main__":
     import uvicorn
     import webbrowser
     import sys
+    import os
     
     # Windows 下 PyInstaller 多进程支持
     # 虽然我们这里没有显式使用多进程，但为了稳健性加上
     from multiprocessing import freeze_support
     freeze_support()
     
+    port = int(os.getenv("PORT", "8000"))
+
     print("Starting Sora2 Video Platform...")
-    print("Server running at: http://localhost:8000")
-    print("Backend API Docs: http://localhost:8000/docs")
+    print(f"Server running at: http://localhost:{port}")
+    print(f"Backend API Docs: http://localhost:{port}/docs")
     print("Please wait while the server starts...")
 
     # 自动打开浏览器
@@ -260,7 +275,7 @@ if __name__ == "__main__":
         # 简单等待一下让服务器启动
         import time
         time.sleep(1.5) 
-        webbrowser.open("http://localhost:8000")
+        webbrowser.open(f"http://localhost:{port}")
 
     # 在新线程中打开浏览器，以免阻塞服务器启动
     import threading
@@ -269,7 +284,7 @@ if __name__ == "__main__":
     # 启动服务器
     # 注意：在打包环境中不要使用 reload=True
     try:
-        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
     except KeyboardInterrupt:
         print("Server stopped by user.")
     except Exception as e:

@@ -443,9 +443,8 @@
             }
 
             // Calculate prompt and validation
-            let aggregatedPrompt = "";
+            let scenes = [];
             let calculatedDuration = 0;
-            let shotIndex = 1;
             let hasPrompt = false;
 
             for (const card of sceneCards) {
@@ -455,9 +454,11 @@
                 
                 if (prompt) hasPrompt = true;
                 
-                aggregatedPrompt += `Shot ${shotIndex}:\nduration: ${duration}sec\nScene: ${prompt || "Continue previous action"}\n\n`;
+                scenes.push({
+                    duration: duration,
+                    prompt: prompt || "Continue previous action"
+                });
                 calculatedDuration += duration;
-                shotIndex++;
             }
 
             // Fix precision before comparing
@@ -502,14 +503,15 @@
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({
-                        prompt: aggregatedPrompt.trim(),
+                        prompt: "", // Backend will construct it from scenes
                         api_key: apiKey,
                         duration: totalDuration,
                         model: model,
                         size: size,
                         orientation: orientation,
                         image: imageBase64,
-                        mode: 'storyboard'
+                        mode: 'storyboard',
+                        scenes: scenes
                     })
                 });
 
