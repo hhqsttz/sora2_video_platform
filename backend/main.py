@@ -15,16 +15,21 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-from fastapi import FastAPI, HTTPException, Response
+# Add current directory to sys.path to ensure local imports work
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from fastapi import FastAPI, HTTPException, Response, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, Literal
+import shutil
 
 from core.task import VideoTask
 from core.task_manager import TaskManager
-from state.memory import add_task, get_task, all_tasks
+from state.memory import add_task, get_task, all_tasks, delete_task
+from state.character_store import add_character, get_all_characters, delete_character
 from config import OUTPUT_DIR, BASE_DIR
 
 # 配置日志
@@ -46,6 +51,10 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # 挂载静态文件目录，使得 /outputs/xxx.mp4 可以访问
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+
+# 挂载前端静态资源 css 和 js
+app.mount("/css", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "css")), name="css")
+app.mount("/js", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "js")), name="js")
 
 # 挂载前端静态资源（如果有 css/js 文件夹），这里简单起见，直接映射根路由到 index.html
 @app.get("/")
@@ -83,6 +92,101 @@ class TaskRequest(BaseModel):
     image: Optional[str] = None  # Base64 string
     proxy: Optional[str] = None  # User provided proxy URL
     mode: Optional[str] = "studio" # "studio" or "storyboard"
+    character_url: Optional[str] = None
+    character_timestamps: Optional[str] = None
+
+class CharacterRequest(BaseModel):
+    timestamps: str
+    from_task: Optional[str] = None
+    url: Optional[str] = None
+    name: Optional[str] = None
+    permission: Optional[str] = None
+    api_key: Optional[str] = None
+    proxy: Optional[str] = None
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        file_path = os.path.join(OUTPUT_DIR, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Construct local URL (relative to server root)
+        # Frontend can prepend origin
+        return {"url": f"/outputs/{file.filename}", "filename": file.filename}
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/characters")
+async def create_character(req: CharacterRequest):
+    if not req.from_task and not req.url:
+        raise HTTPException(status_code=400, detail="Either from_task or url must be provided")
+    
+    # Check if URL is a local file
+    video_file_path = None
+    if req.url and ("/outputs/" in req.url or "localhost" in req.url or "127.0.0.1" in req.url):
+        # Extract filename
+        try:
+            filename = req.url.split("/")[-1]
+            possible_path = os.path.join(OUTPUT_DIR, filename)
+            if os.path.exists(possible_path):
+                video_file_path = possible_path
+                logger.info(f"Resolved local video path: {video_file_path}")
+            else:
+                logger.warning(f"Could not find local file for URL: {req.url}")
+        except Exception as e:
+            logger.warning(f"Error resolving local path: {e}")
+
+    try:
+        result = await manager.client.create_character(
+            timestamps=req.timestamps,
+            api_key=req.api_key,
+            from_task=req.from_task,
+            url=req.url,
+            name=req.name,
+            permission=req.permission,
+            proxy=req.proxy,
+            video_file_path=video_file_path
+        )
+        
+        # Save character to persistent store
+        char_data = result.copy()
+        # Ensure we keep the custom name/permission if provided and not in result
+        if req.name:
+            char_data['name'] = req.name
+        elif 'name' not in char_data:
+            char_data['name'] = char_data.get('username', 'Unknown')
+            
+        if req.permission:
+            char_data['permission'] = req.permission
+        elif 'permission' not in char_data:
+            char_data['permission'] = 'private'
+            
+        add_character(char_data)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to create character: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/characters")
+def list_characters():
+    return get_all_characters()
+
+@app.delete("/characters/{char_id}")
+def delete_character_endpoint(char_id: str):
+    if delete_character(char_id):
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+@app.delete("/tasks/{task_id}")
+def delete_task_endpoint(task_id: str):
+    if delete_task(task_id):
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=404, detail="Task not found")
 
 @app.post("/tasks")
 async def create_task(req: TaskRequest):
@@ -91,11 +195,11 @@ async def create_task(req: TaskRequest):
     if req.image and len(req.image) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image payload too large (max ~10MB raw)")
 
-    logger.info(f"Received new task request with prompt: {req.prompt}, duration: {req.duration}, model: {req.model}, size: {req.size}, orientation: {req.orientation}, has_image: {bool(req.image)}, proxy: {req.proxy}, mode: {req.mode}")
+    logger.info(f"Received new task request with prompt: {req.prompt}, duration: {req.duration}, model: {req.model}, size: {req.size}, orientation: {req.orientation}, has_image: {bool(req.image)}, proxy: {req.proxy}, mode: {req.mode}, character_url: {req.character_url}, character_timestamps: {req.character_timestamps}")
     # 注意：VideoTask 类也需要相应更新，或者我们在这里做一个简单的转换
     # 为了最小化修改，我们暂时将 size 和 orientation 组合成 resolution 字符串传递给 VideoTask，或者修改 VideoTask
     # 这里选择修改 VideoTask 更清晰
-    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy, req.model, req.mode)
+    task = VideoTask(req.prompt, req.api_key, req.duration, req.size, req.orientation, req.image, req.proxy, req.model, req.mode, req.character_url, req.character_timestamps)
     add_task(task)
     asyncio.create_task(manager.run_task(task))
     logger.info(f"Task created with ID: {task.id}")

@@ -7,7 +7,7 @@ import base64
 
 # Add parent directory to path to allow importing config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import SORA_CREATE_URL, SORA_QUERY_URL, SORA_STORYBOARD_URL, USE_MOCK, SORA_MODEL, HTTP_PROXY
+from config import SORA_CREATE_URL, SORA_QUERY_URL, SORA_STORYBOARD_URL, SORA_CHARACTERS_URL, USE_MOCK, SORA_MODEL, HTTP_PROXY
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,23 @@ class SoraClient:
             "Accept": "application/json"
         }
 
-    async def generate_video(self, prompt: str, progress_cb, api_key: str = None, duration: int = 10, size: str = "large", orientation: str = "landscape", image: str = None, proxy: str = None, model: str = "sora-2-pro", mode: str = "studio"):
+    def _parse_timestamps(self, timestamps):
+        if not timestamps:
+            return []
+        if isinstance(timestamps, list):
+            return timestamps
+        # Split by comma, hyphen or space
+        import re
+        try:
+            # Replace common separators with space
+            clean_ts = re.sub(r'[,\-\s]+', ' ', str(timestamps).strip())
+            parts = clean_ts.split()
+            return [float(p) for p in parts if p]
+        except Exception as e:
+            logger.warning(f"Failed to parse timestamps '{timestamps}': {e}")
+            return timestamps
+
+    async def generate_video(self, prompt, progress_cb, api_key=None, duration=10, size="large", orientation="landscape", image=None, proxy=None, model="sora-2", mode="studio", character_url=None, character_timestamps=None):
         # 优先使用用户传入的代理，否则使用全局配置的代理
         request_proxy = proxy if proxy else HTTP_PROXY
 
@@ -131,6 +147,12 @@ class SoraClient:
                         "images": images_list
                     }
 
+                    if character_url and character_timestamps:
+                        payload["character"] = {
+                            "url": character_url,
+                            "timestamps": self._parse_timestamps(character_timestamps)
+                        }
+
                     async with session.post(
                         SORA_CREATE_URL,
                         json=payload,
@@ -242,3 +264,125 @@ class SoraClient:
 
             progress_cb(100)
             return video_bytes
+
+    async def upload_file_to_proxy(self, file_path: str, api_key: str, proxy: str = None):
+        """
+        Uploads a file to the proxy to get a public URL.
+        """
+        request_proxy = proxy if proxy else HTTP_PROXY
+        upload_url = "https://imageproxy.zhongzhuan.chat/api/upload"
+        
+        if not os.path.exists(file_path):
+             raise FileNotFoundError(f"File not found: {file_path}")
+             
+        logger.info(f"Starting proxy upload for file: {file_path}")
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        data = aiohttp.FormData()
+        filename = os.path.basename(file_path)
+        # Determine content type based on extension
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type:
+            content_type = 'application/octet-stream'
+            
+        # Open file in binary mode
+        with open(file_path, 'rb') as f:
+            data.add_field('file', f, filename=filename, content_type=content_type)
+            
+            logger.info(f"Posting to {upload_url}...")
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(upload_url, data=data, proxy=request_proxy) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        logger.error(f"Proxy upload failed. Status: {resp.status}, Response: {error_text}")
+                        raise Exception(f"Proxy upload failed: {error_text}")
+                    
+                    response_text = await resp.text()
+                    logger.info(f"Proxy upload success. Response: {response_text}")
+                    
+                    try:
+                        import json
+                        resp_json = json.loads(response_text)
+                        
+                        raw_url = ""
+                        if 'url' in resp_json:
+                            raw_url = resp_json['url']
+                        elif 'data' in resp_json and 'url' in resp_json['data']:
+                            raw_url = resp_json['data']['url']
+                        else:
+                            raw_url = response_text
+                            
+                        # Clean the URL (remove quotes, backticks, whitespace)
+                        return raw_url.strip().strip('"').strip("'").strip("`")
+                    except:
+                        return response_text.strip().strip('"').strip("'").strip("`")
+
+    async def create_character(self, timestamps: str, api_key: str = None, from_task: str = None, url: str = None, name: str = None, permission: str = None, proxy: str = None, video_file_path: str = None):
+        request_proxy = proxy if proxy else HTTP_PROXY
+        
+        if not api_key:
+             raise ValueError("API Key is required for real requests")
+
+        # 1. Handle Local File Upload (Proxy)
+        # If we have a local video file path, we MUST upload it to the proxy first
+        # to get a public URL that Sora can access.
+        final_url = url
+        
+        if video_file_path:
+            logger.info(f"Detected local video file: {video_file_path}")
+            if os.path.exists(video_file_path):
+                try:
+                    logger.info(">>> Step 1: Uploading local video to proxy server...")
+                    final_url = await self.upload_file_to_proxy(video_file_path, api_key, proxy)
+                    logger.info(f"<<< Step 1 Complete. Public Proxy URL: {final_url}")
+                except Exception as e:
+                    logger.error(f"Failed to upload file to proxy: {e}")
+                    raise Exception(f"Failed to upload local video to proxy: {e}")
+            else:
+                logger.warning(f"Local file path provided but does not exist: {video_file_path}")
+
+        # 2. Prepare Payload
+        headers = self.default_headers.copy()
+        headers["Authorization"] = f"Bearer {api_key}"
+        
+        payload = {
+            "timestamps": str(timestamps).strip()
+        }
+        
+        if from_task:
+            payload["from_task"] = from_task
+        elif final_url:
+            # Clean final_url again just in case
+            payload["url"] = final_url.strip().strip("`")
+        else:
+             raise ValueError("Either from_task, url (public), or video_file_path (local) must be provided")
+
+        # Name and permission are no longer sent to the API as per user instruction
+        
+        logger.info(f">>> Step 2: Creating character with payload: {payload}")
+        
+        # Set a longer timeout (e.g. 600 seconds) for character creation as it involves video processing
+        timeout = aiohttp.ClientTimeout(total=600)
+        
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+            try:
+                async with session.post(
+                    SORA_CHARACTERS_URL,
+                    json=payload,
+                    proxy=request_proxy
+                ) as resp:
+                     if resp.status != 200:
+                        error_text = await resp.text()
+                        logger.error(f"Character creation failed.\nURL: {SORA_CHARACTERS_URL}\nStatus: {resp.status}\nResponse: {error_text}\nPayload: {payload}")
+                        raise Exception(f"Character creation failed: Status {resp.status}. Response: {error_text}")
+                    
+                     resp_json = await resp.json()
+                     logger.info(f"<<< Step 2 Complete. Character created successfully. Response: {resp_json}")
+                     return resp_json
+            except asyncio.TimeoutError:
+                 logger.error(f"Character creation timed out after 600s. Payload: {payload}")
+                 raise Exception("Character creation timed out. The video processing took too long.")

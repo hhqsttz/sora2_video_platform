@@ -1,0 +1,21 @@
+[
+  {
+    "id": "c0feaa59-d2fa-49d3-9784-fa026ebdebdc",
+    "prompt": "@rhzmdwpfb.sunnydogsc 跳舞",
+    "api_key": "sk-SCfQOIsX3nGAJWeGvTcoKyOqoh0GV9Kni8WnUMS5sPirnWvj",
+    "duration": 10,
+    "model": "sora-2",
+    "size": "large",
+    "orientation": "landscape",
+    "image": null,
+    "proxy": null,
+    "mode": "studio",
+    "character_url": null,
+    "character_timestamps": null,
+    "status": "done",
+    "progress": 100,
+    "retry": 0,
+    "result_path": "D:\\biancheng1\\test\\sora2_video_platform\\data\\outputs/c0feaa59-d2fa-49d3-9784-fa026ebdebdc.mp4",
+    "error": null
+  }
+]

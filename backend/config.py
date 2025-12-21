@@ -5,6 +5,7 @@ SORA_API_KEY = os.getenv("SORA_API_KEY", "")
 # 替换为第三方中转 API 地址
 SORA_CREATE_URL = "https://yunwu.ai/v1/video/create"
 SORA_STORYBOARD_URL = "https://yunwu.ai/v1/videos"
+SORA_CHARACTERS_URL = "https://yunwu.ai/sora/v1/characters"
 SORA_QUERY_URL = "https://yunwu.ai/v1/video/query"
 SORA_MODEL = "sora-2"
 USE_MOCK = False  # Disable mock mode for production
