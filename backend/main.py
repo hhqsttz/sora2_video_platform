@@ -31,6 +31,11 @@ from core.task_manager import TaskManager
 from state.memory import add_task, get_task, all_tasks, delete_task
 from state.character_store import add_character, get_all_characters, delete_character
 from config import OUTPUT_DIR, BASE_DIR
+try:
+    from version import VERSION, BUILD_TIME
+except ImportError:
+    VERSION = "Dev Mode"
+    BUILD_TIME = "Unknown"
 
 # 配置日志
 logging.basicConfig(
@@ -45,6 +50,10 @@ app = FastAPI()
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(status_code=204)
+
+@app.get("/api/version")
+async def get_version():
+    return {"version": VERSION, "build_time": BUILD_TIME}
 
 # 确保输出目录存在
 os.makedirs(OUTPUT_DIR, exist_ok=True)

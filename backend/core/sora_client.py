@@ -493,6 +493,20 @@ class SoraClient:
                          # Storyboard polling: GET /v1/videos/{id}
                          poll_url = f"{storyboard_status_url}/{task_id}"
                          async with session.get(poll_url, proxy=request_proxy) as resp:
+                            if resp.status == 403:
+                                logger.warning(f"Storyboard polling 403 Forbidden. Retrying with content URL... URL: {resp.url}")
+                                async with aiohttp.ClientSession(headers=headers) as fresh_session:
+                                     # Fallback: Try /v1/videos/{id}/content
+                                     content_url = f"{self._clean_url(SORA_STORYBOARD_STATUS_URL)}/{task_id}/content"
+                                     async with fresh_session.get(content_url, proxy=request_proxy) as resp2:
+                                         if resp2.status == 200:
+                                             resp = resp2
+                                             logger.info(f"Storyboard polling succeeded via content URL: {content_url}")
+                                         else:
+                                             # Fallback failed, log original error
+                                             error_text = await resp2.text()
+                                             logger.error(f"Storyboard polling retry failed: {resp2.status} - {error_text}")
+                            
                             resp.raise_for_status()
                             status_data = await resp.json()
                             
@@ -511,21 +525,48 @@ class SoraClient:
                         # Studio polling: GET /v1/video/query?id={id}
                         # 显式带上 headers 确保鉴权信息不丢失，特别是 Authorization
                         poll_headers = headers.copy()
-                        async with session.get(self._clean_url(SORA_QUERY_URL), params={"id": task_id}, headers=poll_headers, proxy=request_proxy) as resp:
+                        poll_url = self._clean_url(SORA_QUERY_URL)
+                        
+                        async with session.get(poll_url, params={"id": task_id}, headers=poll_headers, proxy=request_proxy) as resp:
                             if resp.status == 403:
                                 logger.warning(f"Polling 403 Forbidden. Retrying with fresh headers... URL: {resp.url}")
                                 # 某些 WAF 可能因为 Session Cookie 问题拦截，尝试不带 Cookie 重试（或仅带 Auth）
                                 async with aiohttp.ClientSession(headers=headers) as fresh_session:
-                                    async with fresh_session.get(self._clean_url(SORA_QUERY_URL), params={"id": task_id}, proxy=request_proxy) as resp2:
-                                        resp = resp2
-                                        if resp.status != 200:
-                                            # 如果还是不行，抛出详细信息
-                                            error_text = await resp.text()
-                                            logger.error(f"Polling retry failed: {resp.status} - {error_text}")
+                                    # Retry 1: Same URL, fresh session
+                                    async with fresh_session.get(poll_url, params={"id": task_id}, proxy=request_proxy) as resp2:
+                                        if resp2.status == 200:
+                                            resp = resp2
+                                        else:
+                                            # Retry 2: Fallback URL (Storyboard style) /v1/videos/{id}
+                                            # 有些 Token 可能只能访问 /v1/videos/{id} 而不能访问 /v1/video/query
+                                            fallback_url = f"{self._clean_url(SORA_STORYBOARD_STATUS_URL)}/{task_id}"
+                                            logger.warning(f"Polling retry 1 failed. Trying fallback URL: {fallback_url}")
+                                            
+                                            async with fresh_session.get(fallback_url, proxy=request_proxy) as resp3:
+                                                if resp3.status == 200:
+                                                    resp = resp3
+                                                    logger.info(f"Fallback polling succeeded via {fallback_url}")
+                                                else:
+                                                    # Retry 3: Try /v1/videos/{id}/content
+                                                    content_url = f"{self._clean_url(SORA_STORYBOARD_STATUS_URL)}/{task_id}/content"
+                                                    logger.warning(f"Fallback polling failed. Trying content URL: {content_url}")
+                                                    async with fresh_session.get(content_url, proxy=request_proxy) as resp4:
+                                                        if resp4.status == 200:
+                                                            resp = resp4
+                                                            logger.info(f"Content polling succeeded via {content_url}")
+                                                        else:
+                                                            # All retries failed
+                                                            error_text = await resp2.text() # Use original error
+                                                            logger.error(f"Polling retry failed: {resp2.status} - {error_text}")
                             
-                            resp.raise_for_status()
-                            status_data = await resp.json()
-                            state = status_data["status"]
+                            if resp.status == 200:
+                                status_data = await resp.json()
+                                # Compatible with both structures
+                                if "data" in status_data and isinstance(status_data["data"], dict) and "status" in status_data["data"]:
+                                    status_data = status_data["data"]
+                                state = status_data.get("status", "unknown")
+                            else:
+                                resp.raise_for_status()
                             
                 except Exception as e:
                     logger.error(f"Failed to poll status: {e}")

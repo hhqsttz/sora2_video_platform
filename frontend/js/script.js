@@ -2,6 +2,25 @@
         let sceneCount = 0;
         let scenes = [];
 
+        // Init Version
+        (async function initVersion() {
+            try {
+                const res = await fetch(`${API_BASE}/api/version`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const header = document.getElementById('version-header');
+                    if (header) {
+                        header.innerText = `v${data.version.replace(/^v/, '')}`; // Ensure v prefix
+                        header.title = `Build: ${data.build_time}`; // Tooltip for details
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch version", e);
+                const header = document.getElementById('version-header');
+                if (header) header.innerText = "Dev Mode";
+            }
+        })();
+
         function switchMode(mode) {
             document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
             document.getElementById(`btn-${mode}`).classList.add('active');
