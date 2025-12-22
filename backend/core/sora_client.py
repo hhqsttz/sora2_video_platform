@@ -132,6 +132,11 @@ class SoraClient:
             api_size = self._compute_resolution_size(size, orientation, model=model)
  
         logger.info(f"Sending generation request to Sora ({mode}): {prompt}, duration: {duration}s, size: {api_size}, orientation: {api_orientation}, model: {model}, has_image: {bool(image)}")
+        
+        # 确保 User-Agent 伪装，防止被 WAF 拦截
+        if "User-Agent" not in headers:
+            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
         async with aiohttp.ClientSession(headers=headers) as session:
  
             # ① 提交生成任务
@@ -504,7 +509,20 @@ class SoraClient:
                                 state = "queued"
                     else:
                         # Studio polling: GET /v1/video/query?id={id}
-                        async with session.get(self._clean_url(SORA_QUERY_URL), params={"id": task_id}, proxy=request_proxy) as resp:
+                        # 显式带上 headers 确保鉴权信息不丢失，特别是 Authorization
+                        poll_headers = headers.copy()
+                        async with session.get(self._clean_url(SORA_QUERY_URL), params={"id": task_id}, headers=poll_headers, proxy=request_proxy) as resp:
+                            if resp.status == 403:
+                                logger.warning(f"Polling 403 Forbidden. Retrying with fresh headers... URL: {resp.url}")
+                                # 某些 WAF 可能因为 Session Cookie 问题拦截，尝试不带 Cookie 重试（或仅带 Auth）
+                                async with aiohttp.ClientSession(headers=headers) as fresh_session:
+                                    async with fresh_session.get(self._clean_url(SORA_QUERY_URL), params={"id": task_id}, proxy=request_proxy) as resp2:
+                                        resp = resp2
+                                        if resp.status != 200:
+                                            # 如果还是不行，抛出详细信息
+                                            error_text = await resp.text()
+                                            logger.error(f"Polling retry failed: {resp.status} - {error_text}")
+                            
                             resp.raise_for_status()
                             status_data = await resp.json()
                             state = status_data["status"]
